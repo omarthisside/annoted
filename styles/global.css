@@ -1,0 +1,52 @@
+/* Tailwind base styles - scoped to extension elements only */
+/* Only reset overlay, not toolbar - toolbar needs Tailwind utilities to work */
+#proofly-overlay {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Only reset overlay children, not toolbar - toolbar uses Tailwind classes */
+#proofly-overlay *,
+#proofly-overlay *::before,
+#proofly-overlay *::after {
+  box-sizing: border-box;
+}
+
+/* Toolbar and arrow - minimal reset, allow Tailwind to work */
+.proofly-toolbar,
+.proofly-arrow-indicator {
+  box-sizing: border-box;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Toolbar children - only box-sizing, let Tailwind handle margins/padding */
+.proofly-toolbar *,
+.proofly-toolbar *::before,
+.proofly-toolbar *::after,
+.proofly-arrow-indicator *,
+.proofly-arrow-indicator *::before,
+.proofly-arrow-indicator *::after {
+  box-sizing: border-box;
+}
+
+/* Tailwind utilities - only apply to extension elements */
+@tailwind utilities;
+
+@keyframes flash {
+  0% {
+    opacity: 0;
+  }
+  30% {
+    opacity: 0.9;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
