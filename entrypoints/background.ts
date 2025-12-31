@@ -4,61 +4,61 @@ export default defineBackground(() => {
   console.log("[Background] Proofly loaded");
 
   const captureScreenshot = async (tabId: number | undefined): Promise<string> => {
-    if (!tabId) {
-      throw new Error("No tab ID");
-    }
+  if (!tabId) {
+    throw new Error("No tab ID");
+  }
 
-    // First, get the page screenshot
-    const pageScreenshot = await new Promise<string>((resolve, reject) => {
-      chrome.tabs.captureVisibleTab(
-        undefined,
-        { format: "png", quality: 100 },
-        (dataUrl) => {
-          if (chrome.runtime.lastError) {
-            reject(new Error(chrome.runtime.lastError.message));
-            return;
-          }
-          if (!dataUrl) {
-            reject(new Error("Failed to capture screenshot"));
-            return;
-          }
-          resolve(dataUrl);
+  // First, get the page screenshot
+  const pageScreenshot = await new Promise<string>((resolve, reject) => {
+    chrome.tabs.captureVisibleTab(
+      undefined,
+      { format: "png", quality: 100 },
+      (dataUrl) => {
+        if (chrome.runtime.lastError) {
+          reject(new Error(chrome.runtime.lastError.message));
+          return;
         }
-      );
-    });
-
-    // Then, get the canvas overlay from content script
-    return new Promise((resolve, reject) => {
-      chrome.tabs.sendMessage(
-        tabId,
-        { action: "getCanvasData" },
-        (response) => {
-          if (chrome.runtime.lastError) {
-            // If no canvas data, just return page screenshot
-            resolve(pageScreenshot);
-            return;
-          }
-
-          if (response?.canvasData) {
-            // Composite canvas over page screenshot
-            compositeScreenshots(pageScreenshot, response.canvasData)
-              .then(resolve)
-              .catch(() => resolve(pageScreenshot)); // Fallback to page only
-          } else {
-            resolve(pageScreenshot);
-          }
+        if (!dataUrl) {
+          reject(new Error("Failed to capture screenshot"));
+          return;
         }
-      );
-    });
+        resolve(dataUrl);
+      }
+    );
+  });
+
+  // Then, get the canvas overlay from content script
+  return new Promise((resolve, reject) => {
+    chrome.tabs.sendMessage(
+      tabId,
+      { action: "getCanvasData" },
+      (response) => {
+        if (chrome.runtime.lastError) {
+          // If no canvas data, just return page screenshot
+          resolve(pageScreenshot);
+          return;
+        }
+
+        if (response?.canvasData) {
+          // Composite canvas over page screenshot
+          compositeScreenshots(pageScreenshot, response.canvasData)
+            .then(resolve)
+            .catch(() => resolve(pageScreenshot)); // Fallback to page only
+        } else {
+          resolve(pageScreenshot);
+        }
+      }
+    );
+  });
   };
 
   const compositeScreenshots = async (
-    pageDataUrl: string,
-    canvasDataUrl: string
+  pageDataUrl: string,
+  canvasDataUrl: string
   ): Promise<string> => {
     // In service worker context, we can't use DOM APIs
     // Ask content script to composite the images
-    return new Promise((resolve, reject) => {
+  return new Promise((resolve, reject) => {
       // For now, since canvas is already overlaid on the page,
       // chrome.tabs.captureVisibleTab should capture both
       // Return the page screenshot which should include the canvas overlay
@@ -173,7 +173,7 @@ export default defineBackground(() => {
             console.warn("[Background] Full page capture message failed, using regular screenshot:", chrome.runtime.lastError);
             captureScreenshot(tabId).then((dataUrl) => resolve({ dataUrl, isPDF: false })).catch(reject);
             return;
-          }
+}
           // Response will come via the resultListener
         }
       );
@@ -188,37 +188,37 @@ export default defineBackground(() => {
   };
 
   const downloadScreenshot = async (tabId: number | undefined): Promise<void> => {
-    if (!tabId) {
-      throw new Error("No tab ID");
-    }
+  if (!tabId) {
+    throw new Error("No tab ID");
+  }
 
-    // Get screenshot
-    const dataUrl = await captureScreenshot(tabId);
+  // Get screenshot
+  const dataUrl = await captureScreenshot(tabId);
 
-    // Get page title for filename
-    const tab = await chrome.tabs.get(tabId);
-    const pageTitle = tab.title || "page";
-    const sanitizedTitle = pageTitle
-      .replace(/[^a-z0-9]/gi, "-")
-      .toLowerCase()
-      .substring(0, 50);
+  // Get page title for filename
+  const tab = await chrome.tabs.get(tabId);
+  const pageTitle = tab.title || "page";
+  const sanitizedTitle = pageTitle
+    .replace(/[^a-z0-9]/gi, "-")
+    .toLowerCase()
+    .substring(0, 50);
 
-    const date = new Date().toISOString().split("T")[0];
-    const filename = `proofly-${sanitizedTitle}-${date}.png`;
+  const date = new Date().toISOString().split("T")[0];
+  const filename = `proofly-${sanitizedTitle}-${date}.png`;
 
     console.log("[Background] Starting download with filename:", filename);
     console.log("[Background] Data URL length:", dataUrl.length);
-    
+
     // Data URLs can be used directly with chrome.downloads.download
     return new Promise<void>((resolve, reject) => {
-      chrome.downloads.download(
-        {
+  chrome.downloads.download(
+    {
           url: dataUrl,
-          filename: filename,
+      filename: filename,
           saveAs: true,
-        },
-        (downloadId) => {
-          if (chrome.runtime.lastError) {
+    },
+    (downloadId) => {
+      if (chrome.runtime.lastError) {
             const error = chrome.runtime.lastError.message;
             console.error("[Background] Download error:", error);
             reject(new Error(error));
@@ -293,7 +293,7 @@ export default defineBackground(() => {
     }
     });
     console.log("[Background] Action click listener registered");
-  } else {
+      } else {
     console.warn("[Background] chrome.action and chrome.browserAction are not available");
   }
 
@@ -384,7 +384,7 @@ export default defineBackground(() => {
             sendResponse({ error: chrome.runtime.lastError.message });
           } else {
             sendResponse({ dataUrl });
-          }
+}
         }
       );
       return true;

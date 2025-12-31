@@ -27,7 +27,7 @@ export default defineConfig({
         32: "/icon/annoted.png",
         48: "/icon/annoted.png",
         128: "/icon/annoted.png",
-      },
+    },
       // No default_popup - this allows chrome.action.onClicked to work
     },
   },
