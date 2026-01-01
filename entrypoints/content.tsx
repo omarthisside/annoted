@@ -44,6 +44,167 @@ export default defineContentScript({
     // Dragging state
     let draggingAnnotation: number | null = null;
     let draggingText: { id: string; offsetX: number; offsetY: number } | null = null;
+    let moveStartPos: { x: number; y: number } | null = null;
+    let moveStartAnnotation: Annotation | null = null;
+    let moveStartText: TextAnnotation | null = null;
+
+    // Undo/Redo system - Command-based history
+    type Command =
+      | { type: "addPen"; annotation: Annotation }
+      | { type: "addShape"; annotation: Annotation }
+      | { type: "addText"; annotation: TextAnnotation }
+      | { type: "editText"; id: string; oldText: string; newText: string }
+      | { type: "moveAnnotation"; index: number; oldStart: { x: number; y: number }; oldEnd?: { x: number; y: number }; oldPath?: Array<{ x: number; y: number }>; newStart: { x: number; y: number }; newEnd?: { x: number; y: number }; newPath?: Array<{ x: number; y: number }> }
+      | { type: "moveText"; id: string; oldPos: { x: number; y: number }; newPos: { x: number; y: number } }
+      | { type: "deleteText"; annotation: TextAnnotation };
+
+    let undoStack: Command[] = [];
+    let redoStack: Command[] = [];
+
+    // Normalize URL for storage key
+    const getStorageKey = () => {
+      const url = window.location.href.split("#")[0].split("?")[0];
+      return `annoted:session:${url}`;
+    };
+
+    // Save session to localStorage
+    const saveSession = () => {
+      try {
+        const session = {
+          url: window.location.href,
+          actions: undoStack,
+        };
+        localStorage.setItem(getStorageKey(), JSON.stringify(session));
+      } catch (e) {
+        console.warn("[Annoted] Failed to save session:", e);
+      }
+    };
+
+    // Load session from localStorage
+    const loadSession = (): Command[] => {
+      try {
+        const stored = localStorage.getItem(getStorageKey());
+        if (stored) {
+          const session = JSON.parse(stored);
+          // Only restore if URL matches (excluding hash/query)
+          const currentUrl = window.location.href.split("#")[0].split("?")[0];
+          const storedUrl = session.url.split("#")[0].split("?")[0];
+          if (currentUrl === storedUrl) {
+            return session.actions || [];
+          }
+        }
+      } catch (e) {
+        console.warn("[Annoted] Failed to load session:", e);
+      }
+      return [];
+    };
+
+    // Replay commands to restore state
+    const replayCommands = (commands: Command[]) => {
+      // Clear current state
+      annotations.length = 0;
+      textAnnotations.length = 0;
+
+      // Replay all commands in order
+      commands.forEach((cmd) => {
+        if (cmd.type === "addPen" || cmd.type === "addShape") {
+          annotations.push(JSON.parse(JSON.stringify(cmd.annotation)));
+        } else if (cmd.type === "addText") {
+          textAnnotations.push(JSON.parse(JSON.stringify(cmd.annotation)));
+        } else if (cmd.type === "editText") {
+          const text = textAnnotations.find((t) => t.id === cmd.id);
+          if (text) {
+            text.text = cmd.newText;
+          }
+        } else if (cmd.type === "moveAnnotation") {
+          const ann = annotations[cmd.index];
+          if (ann) {
+            ann.start = { ...cmd.newStart };
+            if (cmd.newEnd) ann.end = { ...cmd.newEnd };
+            if (cmd.newPath) ann.path = cmd.newPath.map((p) => ({ ...p }));
+          }
+        } else if (cmd.type === "moveText") {
+          const text = textAnnotations.find((t) => t.id === cmd.id);
+          if (text) {
+            text.x = cmd.newPos.x;
+            text.y = cmd.newPos.y;
+          }
+        } else if (cmd.type === "deleteText") {
+          // Delete is handled by not adding it in the first place during replay
+          // So we don't need to handle it here
+        }
+      });
+
+      // Redraw
+      redrawAll();
+      updateTextAnnotations();
+    };
+
+    // Execute command and add to history
+    const executeCommand = (cmd: Command) => {
+      if (cmd.type === "addPen" || cmd.type === "addShape") {
+        annotations.push(JSON.parse(JSON.stringify(cmd.annotation)));
+      } else if (cmd.type === "addText") {
+        textAnnotations.push(JSON.parse(JSON.stringify(cmd.annotation)));
+      } else if (cmd.type === "editText") {
+        const text = textAnnotations.find((t) => t.id === cmd.id);
+        if (text) {
+          text.text = cmd.newText;
+        }
+      } else if (cmd.type === "moveAnnotation") {
+        const ann = annotations[cmd.index];
+        if (ann) {
+          ann.start = { ...cmd.newStart };
+          if (cmd.newEnd) ann.end = { ...cmd.newEnd };
+          if (cmd.newPath) ann.path = cmd.newPath.map((p) => ({ ...p }));
+        }
+      } else if (cmd.type === "moveText") {
+        const text = textAnnotations.find((t) => t.id === cmd.id);
+        if (text) {
+          text.x = cmd.newPos.x;
+          text.y = cmd.newPos.y;
+        }
+      } else if (cmd.type === "deleteText") {
+        const index = textAnnotations.findIndex((t) => t.id === cmd.annotation.id);
+        if (index > -1) {
+          textAnnotations.splice(index, 1);
+        }
+      }
+
+      // Add to undo stack and clear redo
+      undoStack.push(JSON.parse(JSON.stringify(cmd)));
+      redoStack = [];
+      saveSession();
+      redrawAll();
+      updateTextAnnotations();
+      updateToolbar();
+    };
+
+    // Undo last action
+    const undo = () => {
+      if (undoStack.length === 0) return;
+
+      const cmd = undoStack.pop()!;
+      redoStack.push(cmd);
+
+      // Replay remaining commands
+      replayCommands(undoStack);
+      saveSession();
+      updateToolbar();
+    };
+
+    // Redo last undone action
+    const redo = () => {
+      if (redoStack.length === 0) return;
+
+      const cmd = redoStack.pop()!;
+      undoStack.push(cmd);
+
+      // Replay all commands including the redone one
+      replayCommands(undoStack);
+      saveSession();
+      updateToolbar();
+    };
 
     // Create overlay container - PRESERVE EXISTING STRUCTURE
     const overlay = document.createElement("div");
@@ -186,13 +347,26 @@ export default defineContentScript({
           min-width: 200px;
           font-size: 14px;
         `;
+        let lastTextValue = text.text;
         input.oninput = (e) => {
           text.text = (e.target as HTMLInputElement).value;
         };
         input.onblur = () => {
+          const newText = text.text;
+          if (newText !== lastTextValue) {
+            executeCommand({
+              type: "editText",
+              id: text.id,
+              oldText: lastTextValue,
+              newText: newText,
+            });
+            lastTextValue = newText;
+          }
           if (!text.text.trim()) {
             const index = textAnnotations.findIndex((t) => t.id === text.id);
             if (index > -1) {
+              const deletedText = textAnnotations[index];
+              executeCommand({ type: "deleteText", annotation: deletedText });
               textAnnotations.splice(index, 1);
               updateTextAnnotations();
             }
@@ -211,6 +385,8 @@ export default defineContentScript({
         square: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/></svg>`,
         stickynote: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15.5 3H5a2 2 0 0 0-2 2v14c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2V8.5L15.5 3Z"/><path d="M15 3v6h6"/></svg>`,
         palette: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="13.5" cy="6.5" r=".5" fill="currentColor"/><circle cx="17.5" cy="10.5" r=".5" fill="currentColor"/><circle cx="8.5" cy="7.5" r=".5" fill="currentColor"/><circle cx="6.5" cy="12.5" r=".5" fill="currentColor"/><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z"/></svg>`,
+        rotateCcw: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M3 21v-5h5"/></svg>`,
+        rotateCw: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M3 21v-5h5"/><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg>`,
         camera: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></svg>`,
         download: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>`,
       };
@@ -318,9 +494,10 @@ export default defineContentScript({
       `;
 
       // Helper to create icon button
-      const createIconButton = (iconName: string, isActive: boolean, onClick: () => void, onRightClick?: () => void) => {
+      const createIconButton = (iconName: string, isActive: boolean, onClick: () => void, onRightClick?: () => void, disabled?: boolean) => {
         const btn = document.createElement("button");
         btn.innerHTML = createIcon(iconName);
+        btn.disabled = disabled || false;
         btn.style.cssText = `
           width: 40px;
           height: 40px;
@@ -328,21 +505,24 @@ export default defineContentScript({
           border: ${isActive ? "2px solid #000" : "1px solid #e0e0e0"};
           background: ${isActive ? "#f0f0f0" : "white"};
           border-radius: 8px;
-          cursor: pointer;
+          cursor: ${disabled ? "not-allowed" : "pointer"};
           display: flex;
           align-items: center;
           justify-content: center;
-          color: ${isActive ? "#000" : "#666"};
+          color: ${disabled ? "#ccc" : isActive ? "#000" : "#666"};
+          opacity: ${disabled ? 0.5 : 1};
         `;
         btn.onclick = (e) => {
           e.preventDefault();
-          onClick();
+          if (!disabled) onClick();
         };
         if (onRightClick) {
           btn.oncontextmenu = (e) => {
             e.preventDefault();
-            const rect = btn.getBoundingClientRect();
-            onRightClick();
+            if (!disabled) {
+              const rect = btn.getBoundingClientRect();
+              onRightClick();
+            }
           };
         }
         return btn;
@@ -383,7 +563,7 @@ export default defineContentScript({
               if (canvas) {
                 canvas.style.pointerEvents = "none";
               }
-            } else {
+      } else {
               activeTool = lastUsedShape;
               if (canvas) {
                 canvas.style.pointerEvents = "auto";
@@ -497,6 +677,20 @@ export default defineContentScript({
       };
       toolbar.appendChild(colorBtn);
 
+      // Undo button
+      toolbar.appendChild(
+        createIconButton("rotateCcw", false, () => {
+          undo();
+        }, undefined, undoStack.length === 0)
+      );
+
+      // Redo button
+      toolbar.appendChild(
+        createIconButton("rotateCw", false, () => {
+          redo();
+        }, undefined, redoStack.length === 0)
+      );
+
       overlay.appendChild(toolbar);
     };
 
@@ -519,7 +713,8 @@ export default defineContentScript({
 
       if (activeTool === "text") {
         const id = `text-${Date.now()}`;
-        textAnnotations.push({ id, x, y, text: "", color: selectedColor });
+        const textAnn: TextAnnotation = { id, x, y, text: "", color: selectedColor };
+        executeCommand({ type: "addText", annotation: textAnn });
         updateTextAnnotations();
         const input = document.getElementById(id) as HTMLInputElement;
         if (input) {
@@ -546,6 +741,8 @@ export default defineContentScript({
                 offsetX: e.clientX - rect.left,
                 offsetY: e.clientY - rect.top,
               };
+              moveStartPos = { x: text.x, y: text.y };
+              moveStartText = JSON.parse(JSON.stringify(text));
               return;
             }
           }
@@ -560,6 +757,8 @@ export default defineContentScript({
             const maxY = Math.max(ann.start.y, ann.end.y);
             if (x >= minX - 10 && x <= maxX + 10 && y >= minY - 10 && y <= maxY + 10) {
               draggingAnnotation = i;
+              moveStartPos = { x, y };
+              moveStartAnnotation = JSON.parse(JSON.stringify(ann));
               return;
             }
           } else if (ann.path && ann.path.length > 0) {
@@ -568,6 +767,8 @@ export default defineContentScript({
               const dist = Math.sqrt(Math.pow(x - point.x, 2) + Math.pow(y - point.y, 2));
               if (dist < 20) {
                 draggingAnnotation = i;
+                moveStartPos = { x, y };
+                moveStartAnnotation = JSON.parse(JSON.stringify(ann));
                 return;
               }
             }
@@ -597,6 +798,7 @@ export default defineContentScript({
       if (draggingText) {
         const text = textAnnotations.find((t) => t.id === draggingText!.id);
         if (text) {
+          // Update position for preview (will be committed on mouseup)
           text.x = x - draggingText.offsetX;
           text.y = y - draggingText.offsetY;
           updateTextAnnotations();
@@ -604,22 +806,24 @@ export default defineContentScript({
         return;
       }
 
-      if (draggingAnnotation !== null) {
+      if (draggingAnnotation !== null && moveStartPos && moveStartAnnotation) {
         const ann = annotations[draggingAnnotation];
-        const dx = x - (ann.end ? ann.end.x : ann.start.x);
-        const dy = y - (ann.end ? ann.end.y : ann.start.y);
+        // Calculate delta from mouse start position
+        const dx = x - moveStartPos.x;
+        const dy = y - moveStartPos.y;
         
-        ann.start.x += dx;
-        ann.start.y += dy;
-        if (ann.end) {
-          ann.end.x += dx;
-          ann.end.y += dy;
+        // Update annotation from original state
+        ann.start.x = moveStartAnnotation.start.x + dx;
+        ann.start.y = moveStartAnnotation.start.y + dy;
+        if (ann.end && moveStartAnnotation.end) {
+          ann.end.x = moveStartAnnotation.end.x + dx;
+          ann.end.y = moveStartAnnotation.end.y + dy;
         }
-        if (ann.path) {
-          ann.path.forEach((p) => {
-            p.x += dx;
-            p.y += dy;
-          });
+        if (ann.path && moveStartAnnotation.path) {
+          ann.path = moveStartAnnotation.path.map((p) => ({
+            x: p.x + dx,
+            y: p.y + dy,
+          }));
         }
         redrawAll();
         return;
@@ -661,13 +865,50 @@ export default defineContentScript({
     };
 
     const handleMouseUp = () => {
-      if (draggingText) {
+      if (draggingText && moveStartPos && moveStartText) {
+        const text = textAnnotations.find((t) => t.id === draggingText!.id);
+        if (text) {
+          const newPos = { x: text.x, y: text.y };
+          executeCommand({
+            type: "moveText",
+            id: text.id,
+            oldPos: { x: moveStartText.x, y: moveStartText.y },
+            newPos: newPos,
+          });
+          updateTextAnnotations();
+        }
         draggingText = null;
+        moveStartPos = null;
+        moveStartText = null;
         return;
       }
 
-      if (draggingAnnotation !== null) {
+      if (draggingAnnotation !== null && moveStartPos && moveStartAnnotation) {
+        const ann = annotations[draggingAnnotation];
+        // Capture current state (after move)
+        const newStart = { x: ann.start.x, y: ann.start.y };
+        const newEnd = ann.end ? { ...ann.end } : undefined;
+        const newPath = ann.path ? ann.path.map((p) => ({ ...p })) : undefined;
+        
+        // Original state from moveStartAnnotation
+        const oldStart = { ...moveStartAnnotation.start };
+        const oldEnd = moveStartAnnotation.end ? { ...moveStartAnnotation.end } : undefined;
+        const oldPath = moveStartAnnotation.path ? moveStartAnnotation.path.map((p) => ({ ...p })) : undefined;
+        
+        executeCommand({
+          type: "moveAnnotation",
+          index: draggingAnnotation,
+          oldStart,
+          oldEnd,
+          oldPath,
+          newStart,
+          newEnd,
+          newPath,
+        });
+        redrawAll();
         draggingAnnotation = null;
+        moveStartPos = null;
+        moveStartAnnotation = null;
         return;
       }
 
@@ -678,21 +919,23 @@ export default defineContentScript({
 
       if (activeTool === "pen") {
         if (currentPath.length > 1) {
-          annotations.push({
+          const annotation: Annotation = {
             type: "pen",
             start: currentPath[0],
             path: [...currentPath],
             color: selectedColor,
-          });
+          };
+          executeCommand({ type: "addPen", annotation });
         }
       } else if (activeTool === "rectangle" || activeTool === "circle" || activeTool === "arrow") {
-        annotations.push({
+        const annotation: Annotation = {
           type: activeTool,
           start: startPoint,
           end: { x, y },
           color: selectedColor,
           shapeMode,
-        });
+        };
+        executeCommand({ type: "addShape", annotation });
       }
 
       isDrawing = false;
@@ -707,6 +950,14 @@ export default defineContentScript({
       isActive = true;
 
       createCanvas();
+      
+      // Load session from localStorage
+      const savedCommands = loadSession();
+      if (savedCommands.length > 0) {
+        undoStack = savedCommands;
+        replayCommands(undoStack);
+      }
+      
       createToolbar();
 
       if (!canvas || !ctx) return;
