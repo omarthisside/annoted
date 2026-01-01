@@ -4,12 +4,13 @@ import type { Tool, Color, ShapeMode } from "../utils/types";
 
 // Annotation data structure - uses document coordinates
 interface Annotation {
-  type: "pen" | "rectangle" | "circle" | "arrow";
+  type: "pen" | "highlighter" | "rectangle" | "circle" | "arrow";
   start: { x: number; y: number };
   end?: { x: number; y: number };
   path?: Array<{ x: number; y: number }>;
   color: Color;
   shapeMode?: ShapeMode;
+  penWidth?: number; // Stroke width for pen, highlighter, and shapes
 }
 
 interface TextAnnotation {
@@ -32,6 +33,7 @@ export default defineContentScript({
     let selectedColor: Color = "red";
     let shapeMode: ShapeMode = "outline";
     let lastUsedShape: "rectangle" | "circle" | "arrow" = "rectangle";
+    let penWidth: number = 4; // Default medium width
     let isDrawing = false;
     let startPoint: { x: number; y: number } | null = null;
     let currentPath: Array<{ x: number; y: number }> = [];
@@ -51,6 +53,7 @@ export default defineContentScript({
     // Undo/Redo system - Command-based history
     type Command =
       | { type: "addPen"; annotation: Annotation }
+      | { type: "addHighlighter"; annotation: Annotation }
       | { type: "addShape"; annotation: Annotation }
       | { type: "addText"; annotation: TextAnnotation }
       | { type: "editText"; id: string; oldText: string; newText: string }
@@ -107,7 +110,7 @@ export default defineContentScript({
 
       // Replay all commands in order
       commands.forEach((cmd) => {
-        if (cmd.type === "addPen" || cmd.type === "addShape") {
+        if (cmd.type === "addPen" || cmd.type === "addHighlighter" || cmd.type === "addShape") {
           annotations.push(JSON.parse(JSON.stringify(cmd.annotation)));
         } else if (cmd.type === "addText") {
           textAnnotations.push(JSON.parse(JSON.stringify(cmd.annotation)));
@@ -142,7 +145,7 @@ export default defineContentScript({
 
     // Execute command and add to history
     const executeCommand = (cmd: Command) => {
-      if (cmd.type === "addPen" || cmd.type === "addShape") {
+      if (cmd.type === "addPen" || cmd.type === "addHighlighter" || cmd.type === "addShape") {
         annotations.push(JSON.parse(JSON.stringify(cmd.annotation)));
       } else if (cmd.type === "addText") {
         textAnnotations.push(JSON.parse(JSON.stringify(cmd.annotation)));
@@ -270,11 +273,19 @@ export default defineContentScript({
       const scrollX = window.scrollX;
 
       annotations.forEach((ann) => {
-        if (ann.type === "pen" && ann.path) {
+        if ((ann.type === "pen" || ann.type === "highlighter") && ann.path) {
           ctx!.strokeStyle = getColorValue(ann.color);
-          ctx!.lineWidth = 3;
+          ctx!.lineWidth = ann.penWidth || 4;
           ctx!.lineJoin = "round";
           ctx!.lineCap = "round";
+          
+          // Highlighter uses semi-transparent strokes
+          if (ann.type === "highlighter") {
+            ctx!.globalAlpha = 0.35;
+          } else {
+            ctx!.globalAlpha = 1.0;
+          }
+          
           ctx!.beginPath();
           // Convert document coords to viewport coords
           const firstPoint = ann.path[0];
@@ -292,6 +303,7 @@ export default defineContentScript({
             }
             ctx!.stroke();
           }
+          ctx!.globalAlpha = 1.0; // Reset alpha
         } else if (ann.end) {
           // Shapes - convert to viewport coordinates
           const start = { x: ann.start.x - scrollX, y: ann.start.y - scrollY };
@@ -301,7 +313,7 @@ export default defineContentScript({
             (start.y >= -100 && start.y <= window.innerHeight + 100) ||
             (end.y >= -100 && end.y <= window.innerHeight + 100)
           ) {
-            drawShape(ctx!, ann.type, start, end, ann.color, ann.shapeMode || "outline", 3);
+            drawShape(ctx!, ann.type, start, end, ann.color, ann.shapeMode || "outline", (ann.penWidth || 4) as any);
           }
         }
       });
@@ -381,12 +393,19 @@ export default defineContentScript({
     const createIcon = (name: string): string => {
       const icons: Record<string, string> = {
         pencil: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg>`,
+        highlighter: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l-6 6v3h3l6-6"/><path d="M22 12l-4.6 4.6a2.04 2.04 0 0 1-2.9 0l-5.2-5.2a2.04 2.04 0 0 1 0-2.9L12 2"/></svg>`,
         move: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="5 9 2 12 5 15"/><polyline points="9 5 12 2 15 5"/><polyline points="15 19 12 22 9 19"/><polyline points="19 9 22 12 19 15"/><line x1="2" y1="12" x2="22" y2="12"/><line x1="12" y1="2" x2="12" y2="22"/></svg>`,
+        minus: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/></svg>`,
         square: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/></svg>`,
-        stickynote: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15.5 3H5a2 2 0 0 0-2 2v14c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2V8.5L15.5 3Z"/><path d="M15 3v6h6"/></svg>`,
+        circle: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/></svg>`,
+        arrowRight: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>`,
+        squareDashed: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="2 2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/></svg>`,
+        squareFilled: `<svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/></svg>`,
+        check: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>`,
+        type: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 7 4 4 20 4 20 7"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/></svg>`,
         palette: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="13.5" cy="6.5" r=".5" fill="currentColor"/><circle cx="17.5" cy="10.5" r=".5" fill="currentColor"/><circle cx="8.5" cy="7.5" r=".5" fill="currentColor"/><circle cx="6.5" cy="12.5" r=".5" fill="currentColor"/><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z"/></svg>`,
-        rotateCcw: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M3 21v-5h5"/></svg>`,
-        rotateCw: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M3 21v-5h5"/><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg>`,
+        undo: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13"/></svg>`,
+        redo: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 7v6h-6"/><path d="M3 17a9 9 0 0 1 9-9 9 9 0 0 1 6 2.3L21 13"/></svg>`,
         camera: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></svg>`,
         download: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>`,
       };
@@ -399,8 +418,17 @@ export default defineContentScript({
       dropdowns.forEach((d) => d.remove());
     };
 
-    // Create dropdown menu
-    const createDropdown = (x: number, y: number, items: Array<{ label: string; onClick: () => void }>) => {
+    // Create dropdown menu with enhanced UI support
+    type DropdownItem = {
+      label?: string;
+      onClick: () => void;
+      icon?: string;
+      isSelected?: boolean;
+      color?: string; // For color swatches
+      width?: number; // For width preview
+    };
+
+    const createDropdown = (x: number, y: number, items: Array<DropdownItem>) => {
       closeDropdowns();
       const dropdown = document.createElement("div");
       dropdown.className = "annoted-dropdown";
@@ -418,7 +446,7 @@ export default defineContentScript({
       `;
 
       items.forEach((item) => {
-        if (item.label.startsWith("─")) {
+        if (item.label?.startsWith("─")) {
           // Separator
           const sep = document.createElement("div");
           sep.textContent = item.label;
@@ -433,7 +461,6 @@ export default defineContentScript({
           dropdown.appendChild(sep);
         } else {
           const btn = document.createElement("button");
-          btn.textContent = item.label;
           btn.style.cssText = `
             width: 100%;
             padding: 8px 12px;
@@ -443,13 +470,161 @@ export default defineContentScript({
             cursor: pointer;
             font-size: 14px;
             border-radius: 4px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
           `;
-          btn.onmouseenter = () => {
-            btn.style.background = "#f5f5f5";
-          };
-          btn.onmouseleave = () => {
-            btn.style.background = "white";
-          };
+          
+          // Add icon if provided
+          if (item.icon) {
+            const iconEl = document.createElement("div");
+            iconEl.innerHTML = createIcon(item.icon);
+            iconEl.style.cssText = `
+              width: 18px;
+              height: 18px;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              flex-shrink: 0;
+            `;
+            btn.appendChild(iconEl);
+          }
+          
+          // Color swatch
+          if (item.color) {
+            const swatch = document.createElement("div");
+            swatch.style.cssText = `
+              width: 20px;
+              height: 20px;
+              border-radius: 50%;
+              background: ${item.color};
+              border: ${item.color === "#ffffff" || item.color === "white" ? "1px solid #ccc" : "1px solid rgba(0,0,0,0.1)"};
+              flex-shrink: 0;
+              position: relative;
+              transition: transform 0.2s;
+            `;
+            if (item.isSelected) {
+              // Add check icon overlay
+              const check = document.createElement("div");
+              check.innerHTML = createIcon("check");
+              check.style.cssText = `
+                position: absolute;
+                top: 50%;
+                left: 50%;
+                transform: translate(-50%, -50%);
+                color: ${item.color === "#ffffff" || item.color === "white" ? "#000" : "#fff"};
+                width: 14px;
+                height: 14px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+              `;
+              swatch.appendChild(check);
+              swatch.style.border = "2px solid #000";
+            }
+            btn.onmouseenter = () => {
+              swatch.style.transform = "scale(1.1)";
+              btn.style.background = "#f5f5f5";
+            };
+            btn.onmouseleave = () => {
+              swatch.style.transform = "scale(1)";
+              btn.style.background = "white";
+            };
+            btn.appendChild(swatch);
+            if (item.label) {
+              const labelEl = document.createElement("span");
+              labelEl.textContent = item.label;
+              btn.appendChild(labelEl);
+            }
+          } else if (item.width !== undefined) {
+            // Width preview
+            const widthContainer = document.createElement("div");
+            widthContainer.style.cssText = `
+              display: flex;
+              align-items: center;
+              gap: 8px;
+              flex: 1;
+            `;
+            const iconEl = document.createElement("div");
+            iconEl.innerHTML = createIcon("minus");
+            iconEl.style.cssText = `
+              width: 16px;
+              height: 16px;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              flex-shrink: 0;
+            `;
+            widthContainer.appendChild(iconEl);
+            const line = document.createElement("div");
+            line.style.cssText = `
+              width: 40px;
+              height: ${item.width}px;
+              background: #000;
+              border-radius: 2px;
+              flex-shrink: 0;
+            `;
+            widthContainer.appendChild(line);
+            if (item.label) {
+              const labelEl = document.createElement("span");
+              labelEl.textContent = item.label;
+              widthContainer.appendChild(labelEl);
+            }
+            if (item.isSelected) {
+              const check = document.createElement("div");
+              check.innerHTML = createIcon("check");
+              check.style.cssText = `
+                width: 16px;
+                height: 16px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                flex-shrink: 0;
+                color: #000;
+              `;
+              widthContainer.appendChild(check);
+            }
+            btn.appendChild(widthContainer);
+            if (item.isSelected) {
+              btn.style.background = "#f0f0f0";
+            }
+            btn.onmouseenter = () => {
+              btn.style.background = "#f5f5f5";
+            };
+            btn.onmouseleave = () => {
+              btn.style.background = item.isSelected ? "#f0f0f0" : "white";
+            };
+          } else {
+            // Regular item with optional icon and label
+            if (item.label) {
+              const labelEl = document.createElement("span");
+              labelEl.textContent = item.label;
+              btn.appendChild(labelEl);
+            }
+            if (item.isSelected) {
+              const check = document.createElement("div");
+              check.innerHTML = createIcon("check");
+              check.style.cssText = `
+                width: 16px;
+                height: 16px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                flex-shrink: 0;
+                margin-left: auto;
+                color: #000;
+              `;
+              btn.appendChild(check);
+              btn.style.background = "#f0f0f0";
+            }
+            btn.onmouseenter = () => {
+              btn.style.background = "#f5f5f5";
+            };
+            btn.onmouseleave = () => {
+              btn.style.background = item.isSelected ? "#f0f0f0" : "white";
+            };
+          }
+          
           btn.onclick = () => {
             item.onClick();
             closeDropdowns();
@@ -539,6 +714,60 @@ export default defineContentScript({
         })
       );
 
+      // Highlighter tool
+      toolbar.appendChild(
+        createIconButton("highlighter", activeTool === "highlighter", () => {
+          activeTool = activeTool === "highlighter" ? null : "highlighter";
+          if (canvas) {
+            canvas.style.pointerEvents = activeTool ? "auto" : "none";
+          }
+          updateToolbar();
+        })
+      );
+
+      // Pen width selector
+      const widthBtn = createIconButton("minus", false, () => {
+        // Left click: no action (just visual)
+      });
+      // Add visual indicator showing current width
+      const widthIndicator = document.createElement("div");
+      widthIndicator.style.cssText = `
+        position: absolute;
+        bottom: 4px;
+        left: 50%;
+        transform: translateX(-50%);
+        width: ${Math.min(penWidth * 2, 20)}px;
+        height: ${penWidth}px;
+        background: #000;
+        border-radius: 2px;
+      `;
+      widthBtn.style.position = "relative";
+      widthBtn.appendChild(widthIndicator);
+      widthBtn.oncontextmenu = (e) => {
+        e.preventDefault();
+        const rect = widthBtn.getBoundingClientRect();
+        const widths = [
+          { label: "Thin", value: 2 },
+          { label: "Medium", value: 4 },
+          { label: "Thick", value: 8 },
+          { label: "Extra Thick", value: 12 },
+        ];
+        const items: DropdownItem[] = [];
+        widths.forEach((w) => {
+          items.push({
+            label: `${w.label} (${w.value}px)`,
+            width: w.value,
+            isSelected: penWidth === w.value,
+            onClick: () => {
+              penWidth = w.value;
+              updateToolbar();
+            },
+          });
+        });
+        createDropdown(rect.left - 130, rect.top, items);
+      };
+      toolbar.appendChild(widthBtn);
+
       // Move tool
       toolbar.appendChild(
         createIconButton("move", activeTool === "move", () => {
@@ -552,32 +781,32 @@ export default defineContentScript({
 
       // Shapes tool (grouped)
       const isShapeActive = activeTool === "rectangle" || activeTool === "circle" || activeTool === "arrow";
-      toolbar.appendChild(
-        createIconButton(
-          "square",
-          isShapeActive,
-          () => {
-            // Left click: toggle last used shape
-            if (isShapeActive) {
-              activeTool = null;
-              if (canvas) {
-                canvas.style.pointerEvents = "none";
-              }
-      } else {
-              activeTool = lastUsedShape;
-              if (canvas) {
-                canvas.style.pointerEvents = "auto";
-              }
+      const shapesBtn = createIconButton(
+        "square",
+        isShapeActive,
+        () => {
+          // Left click: toggle last used shape
+          if (isShapeActive) {
+            activeTool = null;
+            if (canvas) {
+              canvas.style.pointerEvents = "none";
             }
-            updateToolbar();
-          },
-          () => {
-            // Right click: show shape dropdown
-            const btn = toolbar.querySelector('button:nth-child(3)') as HTMLElement;
-            const rect = btn.getBoundingClientRect();
+      } else {
+            activeTool = lastUsedShape;
+            if (canvas) {
+              canvas.style.pointerEvents = "auto";
+            }
+          }
+          updateToolbar();
+        },
+        () => {
+          // Right click: show shape dropdown
+          const rect = shapesBtn.getBoundingClientRect();
             createDropdown(rect.left - 130, rect.top, [
               {
                 label: "Rectangle",
+                icon: "square",
+                isSelected: lastUsedShape === "rectangle",
                 onClick: () => {
                   lastUsedShape = "rectangle";
                   activeTool = "rectangle";
@@ -587,6 +816,8 @@ export default defineContentScript({
               },
               {
                 label: "Circle",
+                icon: "circle",
+                isSelected: lastUsedShape === "circle",
                 onClick: () => {
                   lastUsedShape = "circle";
                   activeTool = "circle";
@@ -596,6 +827,8 @@ export default defineContentScript({
               },
               {
                 label: "Arrow",
+                icon: "arrowRight",
+                isSelected: lastUsedShape === "arrow",
                 onClick: () => {
                   lastUsedShape = "arrow";
                   activeTool = "arrow";
@@ -605,14 +838,18 @@ export default defineContentScript({
               },
               { label: "────────", onClick: () => { closeDropdowns(); } },
               {
-                label: shapeMode === "outline" ? "✓ Outline" : "Outline",
+                label: shapeMode === "outline" ? "Outline" : "Outline",
+                icon: "square",
+                isSelected: shapeMode === "outline",
                 onClick: () => {
                   shapeMode = "outline";
                   updateToolbar();
                 },
               },
               {
-                label: shapeMode === "filled" ? "✓ Filled" : "Filled",
+                label: shapeMode === "filled" ? "Filled" : "Filled",
+                icon: "squareFilled",
+                isSelected: shapeMode === "filled",
                 onClick: () => {
                   shapeMode = "filled";
                   updateToolbar();
@@ -620,12 +857,12 @@ export default defineContentScript({
               },
             ]);
           }
-        )
-      );
+        );
+      toolbar.appendChild(shapesBtn);
 
       // Text tool
       toolbar.appendChild(
-        createIconButton("stickynote", activeTool === "text", () => {
+        createIconButton("type", activeTool === "text", () => {
           activeTool = activeTool === "text" ? null : "text";
           if (canvas) {
             canvas.style.pointerEvents = activeTool ? "auto" : "none";
@@ -667,8 +904,16 @@ export default defineContentScript({
           yellow: "Yellow", 
           white: "Black"
         };
+        const colorValues: Record<Color, string> = {
+          red: "#ff3b30",
+          blue: "#007aff",
+          yellow: "#ffcc00",
+          white: "#000000", // Black for UI
+        };
         createDropdown(rect.left - 130, rect.top, colors.map((color) => ({
-          label: selectedColor === color ? `✓ ${colorLabels[color]}` : colorLabels[color],
+          label: colorLabels[color],
+          color: colorValues[color],
+          isSelected: selectedColor === color,
           onClick: () => {
             selectedColor = color;
             updateToolbar();
@@ -679,14 +924,14 @@ export default defineContentScript({
 
       // Undo button
       toolbar.appendChild(
-        createIconButton("rotateCcw", false, () => {
+        createIconButton("undo", false, () => {
           undo();
         }, undefined, undoStack.length === 0)
       );
 
       // Redo button
       toolbar.appendChild(
-        createIconButton("rotateCw", false, () => {
+        createIconButton("redo", false, () => {
           redo();
         }, undefined, redoStack.length === 0)
       );
@@ -781,7 +1026,7 @@ export default defineContentScript({
       isDrawing = true;
       startPoint = { x, y };
 
-      if (activeTool === "pen") {
+      if (activeTool === "pen" || activeTool === "highlighter") {
         currentPath = [{ x, y }];
       }
     };
@@ -831,15 +1076,22 @@ export default defineContentScript({
 
       if (!isDrawing || !activeTool || !startPoint) return;
 
-      if (activeTool === "pen") {
+      if (activeTool === "pen" || activeTool === "highlighter") {
         currentPath.push({ x, y });
         redrawAll();
         // Draw current path in viewport coordinates
         if (ctx) {
           ctx.strokeStyle = getColorValue(selectedColor);
-          ctx.lineWidth = 3;
+          ctx.lineWidth = penWidth;
           ctx.lineJoin = "round";
           ctx.lineCap = "round";
+          
+          if (activeTool === "highlighter") {
+            ctx.globalAlpha = 0.35;
+      } else {
+            ctx.globalAlpha = 1.0;
+          }
+          
           ctx.beginPath();
           const scrollY = window.scrollY;
           const scrollX = window.scrollX;
@@ -850,6 +1102,7 @@ export default defineContentScript({
             ctx.lineTo(p.x - scrollX, p.y - scrollY);
           }
           ctx.stroke();
+          ctx.globalAlpha = 1.0; // Reset alpha
         }
       } else if (activeTool === "rectangle" || activeTool === "circle" || activeTool === "arrow") {
         // Preview shape in viewport coordinates
@@ -859,7 +1112,7 @@ export default defineContentScript({
           const scrollX = window.scrollX;
           const start = { x: startPoint.x - scrollX, y: startPoint.y - scrollY };
           const end = { x: x - scrollX, y: y - scrollY };
-          drawShape(ctx, activeTool, start, end, selectedColor, shapeMode, 3);
+          drawShape(ctx, activeTool, start, end, selectedColor, shapeMode, penWidth as any);
         }
       }
     };
@@ -924,8 +1177,20 @@ export default defineContentScript({
             start: currentPath[0],
             path: [...currentPath],
             color: selectedColor,
+            penWidth,
           };
           executeCommand({ type: "addPen", annotation });
+        }
+      } else if (activeTool === "highlighter") {
+        if (currentPath.length > 1) {
+          const annotation: Annotation = {
+            type: "highlighter",
+            start: currentPath[0],
+            path: [...currentPath],
+            color: selectedColor,
+            penWidth,
+          };
+          executeCommand({ type: "addHighlighter", annotation });
         }
       } else if (activeTool === "rectangle" || activeTool === "circle" || activeTool === "arrow") {
         const annotation: Annotation = {
@@ -934,6 +1199,7 @@ export default defineContentScript({
           end: { x, y },
           color: selectedColor,
           shapeMode,
+          penWidth,
         };
         executeCommand({ type: "addShape", annotation });
       }
@@ -1030,6 +1296,13 @@ export default defineContentScript({
       if (e.key === "p" || e.key === "P") {
         e.preventDefault();
         activeTool = activeTool === "pen" ? null : "pen";
+        if (canvas) {
+          canvas.style.pointerEvents = activeTool ? "auto" : "none";
+        }
+        updateToolbar();
+      } else if (e.key === "h" || e.key === "H") {
+        e.preventDefault();
+        activeTool = activeTool === "highlighter" ? null : "highlighter";
         if (canvas) {
           canvas.style.pointerEvents = activeTool ? "auto" : "none";
         }
