@@ -450,7 +450,7 @@ export default defineContentScript({
     const createIcon = (name: string): string => {
       const icons: Record<string, string> = {
         pencil: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg>`,
-        highlighter: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l-6 6v3h3l6-6"/><path d="M22 12l-4.6 4.6a2.04 2.04 0 0 1-2.9 0l-5.2-5.2a2.04 2.04 0 0 1 0-2.9L12 2"/></svg>`,
+        highlighter: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15.5 5.5-1.4-1.4a2 2 0 0 0-2.8 0L9.5 6.5"/><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M3 19h18"/><path d="M9 3h6"/></svg>`,
         move: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="5 9 2 12 5 15"/><polyline points="9 5 12 2 15 5"/><polyline points="15 19 12 22 9 19"/><polyline points="19 9 22 12 19 15"/><line x1="2" y1="12" x2="22" y2="12"/><line x1="12" y1="2" x2="12" y2="22"/></svg>`,
         minus: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/></svg>`,
         square: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/></svg>`,
@@ -466,6 +466,7 @@ export default defineContentScript({
         undo: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13"/></svg>`,
         redo: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 7v6h-6"/><path d="M3 17a9 9 0 0 1 9-9 9 9 0 0 1 6 2.3L21 13"/></svg>`,
         camera: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></svg>`,
+        scan: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7V5a2 2 0 0 1 2-2h2"/><path d="M17 3h2a2 2 0 0 1 2 2v2"/><path d="M21 17v2a2 2 0 0 1-2 2h-2"/><path d="M7 21H5a2 2 0 0 1-2-2v-2"/><line x1="7" y1="12" x2="17" y2="12"/></svg>`,
         download: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>`,
       };
       return icons[name] || "";
@@ -495,9 +496,11 @@ export default defineContentScript({
         position: fixed;
         left: ${x}px;
         top: ${y}px;
-        background: white;
-        border-radius: 8px;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        background: rgba(0, 0, 0, 0.7);
+        backdrop-filter: blur(10px);
+        -webkit-backdrop-filter: blur(10px);
+        border: 1px solid rgba(255, 255, 255, 0.15);
+        border-radius: 12px;
         padding: 4px;
         z-index: 2147483649;
         pointer-events: auto;
@@ -524,14 +527,16 @@ export default defineContentScript({
             width: 100%;
             padding: 8px 12px;
             border: none;
-            background: white;
+            background: ${item.isSelected ? "rgba(255, 255, 255, 0.2)" : "transparent"};
             text-align: left;
             cursor: pointer;
             font-size: 14px;
-            border-radius: 4px;
+            border-radius: 8px;
             display: flex;
             align-items: center;
             gap: 8px;
+            color: #ffffff;
+            transition: background-color 120ms ease;
           `;
           
           // Add icon if provided
@@ -545,6 +550,7 @@ export default defineContentScript({
               align-items: center;
               justify-content: center;
               flex-shrink: 0;
+              color: #ffffff;
             `;
             btn.appendChild(iconEl);
           }
@@ -579,20 +585,21 @@ export default defineContentScript({
                 justify-content: center;
               `;
               swatch.appendChild(check);
-              swatch.style.border = "2px solid #000";
+              swatch.style.border = "2px solid rgba(255, 255, 255, 0.6)";
             }
             btn.onmouseenter = () => {
-              swatch.style.transform = "scale(1.1)";
-              btn.style.background = "#f5f5f5";
+              btn.style.background = "rgba(255, 255, 255, 0.12)";
             };
             btn.onmouseleave = () => {
-              swatch.style.transform = "scale(1)";
-              btn.style.background = "white";
+              btn.style.background = item.isSelected ? "rgba(255, 255, 255, 0.2)" : "transparent";
             };
             btn.appendChild(swatch);
             if (item.label) {
               const labelEl = document.createElement("span");
               labelEl.textContent = item.label;
+              labelEl.style.cssText = `
+                color: #ffffff;
+              `;
               btn.appendChild(labelEl);
             }
           } else if (item.width !== undefined) {
@@ -604,22 +611,11 @@ export default defineContentScript({
               gap: 8px;
               flex: 1;
             `;
-            const iconEl = document.createElement("div");
-            iconEl.innerHTML = createIcon("minus");
-            iconEl.style.cssText = `
-              width: 16px;
-              height: 16px;
-              display: flex;
-              align-items: center;
-              justify-content: center;
-              flex-shrink: 0;
-            `;
-            widthContainer.appendChild(iconEl);
             const line = document.createElement("div");
             line.style.cssText = `
               width: 40px;
               height: ${item.width}px;
-              background: #000;
+              background: #ffffff;
               border-radius: 2px;
               flex-shrink: 0;
             `;
@@ -627,6 +623,9 @@ export default defineContentScript({
             if (item.label) {
               const labelEl = document.createElement("span");
               labelEl.textContent = item.label;
+              labelEl.style.cssText = `
+                color: #ffffff;
+              `;
               widthContainer.appendChild(labelEl);
             }
             if (item.isSelected) {
@@ -639,25 +638,28 @@ export default defineContentScript({
                 align-items: center;
                 justify-content: center;
                 flex-shrink: 0;
-                color: #000;
+                color: #ffffff;
               `;
               widthContainer.appendChild(check);
             }
             btn.appendChild(widthContainer);
             if (item.isSelected) {
-              btn.style.background = "#f0f0f0";
+              btn.style.background = "rgba(255, 255, 255, 0.2)";
             }
             btn.onmouseenter = () => {
-              btn.style.background = "#f5f5f5";
+              btn.style.background = "rgba(255, 255, 255, 0.12)";
             };
             btn.onmouseleave = () => {
-              btn.style.background = item.isSelected ? "#f0f0f0" : "white";
+              btn.style.background = item.isSelected ? "rgba(255, 255, 255, 0.2)" : "transparent";
             };
           } else {
             // Regular item with optional icon and label
             if (item.label) {
               const labelEl = document.createElement("span");
               labelEl.textContent = item.label;
+              labelEl.style.cssText = `
+                color: #ffffff;
+              `;
               btn.appendChild(labelEl);
             }
             if (item.isSelected) {
@@ -671,16 +673,16 @@ export default defineContentScript({
                 justify-content: center;
                 flex-shrink: 0;
                 margin-left: auto;
-                color: #000;
+                color: #ffffff;
               `;
               btn.appendChild(check);
-              btn.style.background = "#f0f0f0";
+              btn.style.background = "rgba(255, 255, 255, 0.2)";
             }
             btn.onmouseenter = () => {
-              btn.style.background = "#f5f5f5";
+              btn.style.background = "rgba(255, 255, 255, 0.12)";
             };
             btn.onmouseleave = () => {
-              btn.style.background = item.isSelected ? "#f0f0f0" : "white";
+              btn.style.background = item.isSelected ? "rgba(255, 255, 255, 0.2)" : "transparent";
             };
           }
           
@@ -706,6 +708,130 @@ export default defineContentScript({
       }, 0);
     };
 
+    // Background detection for adaptive theming
+    let lastDetectedTheme: "light" | "dark" | null = null;
+    
+    const detectBackgroundTheme = (): "light" | "dark" => {
+      const toolbar = document.getElementById("annoted-toolbar");
+      if (!toolbar) return "dark"; // Default to dark (white icons)
+      
+      const rect = toolbar.getBoundingClientRect();
+      // Sample a point behind the toolbar (slightly to the left)
+      const sampleX = rect.left - 20;
+      const sampleY = rect.top + rect.height / 2;
+      
+      // Get element at sample point
+      const element = document.elementFromPoint(sampleX, sampleY);
+      if (!element) return "dark";
+      
+      // Get computed style
+      const style = window.getComputedStyle(element);
+      const bgColor = style.backgroundColor;
+      
+      // Parse RGB values
+      const rgbMatch = bgColor.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
+      if (!rgbMatch) return "dark";
+      
+      const r = parseInt(rgbMatch[1], 10);
+      const g = parseInt(rgbMatch[2], 10);
+      const b = parseInt(rgbMatch[3], 10);
+      
+      // Calculate perceived luminance
+      const luminance = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+      
+      return luminance < 0.5 ? "dark" : "light";
+    };
+    
+    const updateToolbarTheme = () => {
+      const toolbar = document.getElementById("annoted-toolbar");
+      if (!toolbar) return;
+      
+      const theme = detectBackgroundTheme();
+      
+      // Only update if theme changed
+      if (theme === lastDetectedTheme) return;
+      lastDetectedTheme = theme;
+      
+      // Set CSS variables
+      if (theme === "dark") {
+        toolbar.style.setProperty("--icon-color", "rgba(255, 255, 255, 0.95)");
+        toolbar.style.setProperty("--icon-color-active", "rgba(255, 255, 255, 1)");
+        toolbar.style.setProperty("--label-color", "rgba(255, 255, 255, 0.7)");
+        toolbar.style.setProperty("--label-color-active", "rgba(255, 255, 255, 0.9)");
+        toolbar.style.setProperty("--icon-color-disabled", "rgba(255, 255, 255, 0.3)");
+        toolbar.style.setProperty("--hover-bg", "rgba(255, 255, 255, 0.18)");
+        toolbar.style.setProperty("--active-bg", "rgba(255, 255, 255, 0.28)");
+        toolbar.style.setProperty("--active-border", "rgba(255, 255, 255, 0.4)");
+        toolbar.style.setProperty("--active-glow", "rgba(255, 255, 255, 0.3)");
+      } else {
+        toolbar.style.setProperty("--icon-color", "rgba(0, 0, 0, 0.9)");
+        toolbar.style.setProperty("--icon-color-active", "rgba(0, 0, 0, 1)");
+        toolbar.style.setProperty("--label-color", "rgba(0, 0, 0, 0.6)");
+        toolbar.style.setProperty("--label-color-active", "rgba(0, 0, 0, 0.8)");
+        toolbar.style.setProperty("--icon-color-disabled", "rgba(0, 0, 0, 0.3)");
+        toolbar.style.setProperty("--hover-bg", "rgba(0, 0, 0, 0.08)");
+        toolbar.style.setProperty("--active-bg", "rgba(0, 0, 0, 0.15)");
+        toolbar.style.setProperty("--active-border", "rgba(0, 0, 0, 0.2)");
+        toolbar.style.setProperty("--active-glow", "rgba(0, 0, 0, 0.15)");
+      }
+      
+      // Update all buttons
+      const buttons = toolbar.querySelectorAll("button");
+      buttons.forEach((btn) => {
+        const isActive = btn.style.border.includes("solid");
+        const isDisabled = btn.disabled;
+        const iconContainer = btn.querySelector("div:first-child") as HTMLElement;
+        const labelEl = btn.querySelector("div:last-child") as HTMLElement;
+        
+        if (iconContainer) {
+          iconContainer.style.color = isDisabled 
+            ? "var(--icon-color-disabled)" 
+            : isActive 
+            ? "var(--icon-color-active)" 
+            : "var(--icon-color)";
+        }
+        
+        if (labelEl && labelEl.textContent && labelEl.textContent.length < 20) {
+          // It's a label, not an icon
+          labelEl.style.color = isActive 
+            ? "var(--label-color-active)" 
+            : "var(--label-color)";
+        }
+      });
+      
+      // Update dropdowns
+      const dropdowns = document.querySelectorAll(".annoted-dropdown");
+      dropdowns.forEach((dropdown) => {
+        const dropdownEl = dropdown as HTMLElement;
+        dropdownEl.style.setProperty("--icon-color", theme === "dark" ? "rgba(255, 255, 255, 0.9)" : "rgba(0, 0, 0, 0.9)");
+        dropdownEl.style.setProperty("--label-color", theme === "dark" ? "rgba(255, 255, 255, 0.9)" : "rgba(0, 0, 0, 0.9)");
+        dropdownEl.style.setProperty("--hover-bg", theme === "dark" ? "rgba(255, 255, 255, 0.15)" : "rgba(0, 0, 0, 0.08)");
+        dropdownEl.style.setProperty("--selected-bg", theme === "dark" ? "rgba(255, 255, 255, 0.2)" : "rgba(0, 0, 0, 0.1)");
+        
+        const dropdownButtons = dropdown.querySelectorAll("button");
+        dropdownButtons.forEach((btn) => {
+          const icons = btn.querySelectorAll("svg, div[style*='color']");
+          icons.forEach((icon) => {
+            (icon as HTMLElement).style.color = "var(--icon-color)";
+          });
+          const labels = btn.querySelectorAll("span");
+          labels.forEach((label) => {
+            label.style.color = "var(--label-color)";
+          });
+        });
+      });
+    };
+    
+    // Throttled update function
+    let themeUpdateTimeout: number | null = null;
+    const scheduleThemeUpdate = () => {
+      if (themeUpdateTimeout) return;
+      themeUpdateTimeout = window.setTimeout(() => {
+        updateToolbarTheme();
+        themeUpdateTimeout = null;
+      }, 100);
+    };
+
     // Vertical toolbar with icons
     const createToolbar = () => {
       const toolbar = document.createElement("div");
@@ -716,36 +842,82 @@ export default defineContentScript({
         right: 16px;
         transform: translateY(-50%);
         z-index: 2147483648;
-        background: white;
+        background: rgba(0, 0, 0, 0.7);
+        backdrop-filter: blur(10px);
+        -webkit-backdrop-filter: blur(10px);
+        border: 1px solid rgba(255, 255, 255, 0.15);
         padding: 8px;
         border-radius: 12px;
-        box-shadow: 0 2px 12px rgba(0,0,0,0.15);
         display: flex;
         flex-direction: column;
         gap: 4px;
         pointer-events: auto;
-        font-family: Arial, sans-serif;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
       `;
 
-      // Helper to create icon button
-      const createIconButton = (iconName: string, isActive: boolean, onClick: () => void, onRightClick?: () => void, disabled?: boolean) => {
+      // Helper to create icon button with optional label
+      const createIconButton = (iconName: string, isActive: boolean, onClick: () => void, onRightClick?: () => void, disabled?: boolean, label?: string) => {
         const btn = document.createElement("button");
-        btn.innerHTML = createIcon(iconName);
         btn.disabled = disabled || false;
         btn.style.cssText = `
           width: 40px;
-          height: 40px;
-          padding: 0;
-          border: ${isActive ? "2px solid #000" : "1px solid #e0e0e0"};
-          background: ${isActive ? "#f0f0f0" : "white"};
-          border-radius: 8px;
+          min-height: 48px;
+          padding: 4px 0;
+          border: none;
+          background: ${isActive ? "rgba(255, 255, 255, 0.2)" : "transparent"};
+          border-radius: 10px;
           cursor: ${disabled ? "not-allowed" : "pointer"};
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          gap: 2px;
+          color: #ffffff;
+          opacity: ${disabled ? 0.5 : 1};
+          transition: background-color 120ms ease;
+        `;
+        
+        // Icon container
+        const iconContainer = document.createElement("div");
+        iconContainer.innerHTML = createIcon(iconName);
+        iconContainer.style.cssText = `
           display: flex;
           align-items: center;
           justify-content: center;
-          color: ${disabled ? "#ccc" : isActive ? "#000" : "#666"};
-          opacity: ${disabled ? 0.5 : 1};
+          width: 20px;
+          height: 20px;
+          color: #ffffff;
         `;
+        btn.appendChild(iconContainer);
+        
+        // Label if provided
+        if (label) {
+          const labelEl = document.createElement("div");
+          labelEl.textContent = label;
+          labelEl.style.cssText = `
+            font-size: 8px;
+            color: rgba(255, 255, 255, 0.75);
+            text-align: center;
+            line-height: 1;
+            margin-top: 2px;
+          `;
+          btn.appendChild(labelEl);
+        }
+        
+        // Hover effects
+        if (!disabled) {
+          btn.onmouseenter = () => {
+            if (!isActive) {
+              btn.style.background = "rgba(255, 255, 255, 0.12)";
+            }
+          };
+          btn.onmouseleave = () => {
+            if (!isActive) {
+              btn.style.background = "transparent";
+            }
+          };
+        }
+        
         btn.onclick = (e) => {
           e.preventDefault();
           if (!disabled) onClick();
@@ -771,7 +943,7 @@ export default defineContentScript({
           }
           saveSession();
           updateToolbar();
-        })
+        }, undefined, false, "Pen")
       );
 
       // Highlighter tool
@@ -783,27 +955,54 @@ export default defineContentScript({
           }
           saveSession();
           updateToolbar();
-        })
+        }, undefined, false, "Highlighter")
       );
 
       // Pen width selector
-      const widthBtn = createIconButton("minus", false, () => {
-        // Left click: no action (just visual)
-      });
+      const widthBtn = document.createElement("button");
+      widthBtn.title = "Pen Width";
+      widthBtn.style.cssText = `
+        width: 40px;
+        min-height: 48px;
+        padding: 4px 0;
+        border: none;
+        background: transparent;
+        border-radius: 10px;
+        cursor: pointer;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 2px;
+        position: relative;
+        transition: background-color 120ms ease;
+      `;
+      widthBtn.onmouseenter = () => {
+        widthBtn.style.background = "rgba(255, 255, 255, 0.12)";
+      };
+      widthBtn.onmouseleave = () => {
+        widthBtn.style.background = "transparent";
+      };
       // Add visual indicator showing current width
       const widthIndicator = document.createElement("div");
       widthIndicator.style.cssText = `
-        position: absolute;
-        bottom: 4px;
-        left: 50%;
-        transform: translateX(-50%);
         width: ${Math.min(penWidth * 2, 20)}px;
         height: ${penWidth}px;
-        background: #000;
+        background: #ffffff;
         border-radius: 2px;
       `;
-      widthBtn.style.position = "relative";
       widthBtn.appendChild(widthIndicator);
+      // Add label
+      const widthLabel = document.createElement("div");
+      widthLabel.textContent = "Width";
+      widthLabel.style.cssText = `
+        font-size: 8px;
+        color: rgba(255, 255, 255, 0.75);
+        text-align: center;
+        line-height: 1;
+        margin-top: 2px;
+      `;
+      widthBtn.appendChild(widthLabel);
       widthBtn.oncontextmenu = (e) => {
         e.preventDefault();
         const rect = widthBtn.getBoundingClientRect();
@@ -839,7 +1038,7 @@ export default defineContentScript({
           }
           saveSession();
           updateToolbar();
-        })
+        }, undefined, false, "Move")
       );
 
       // Shapes tool (grouped)
@@ -925,7 +1124,9 @@ export default defineContentScript({
                 },
               },
             ]);
-          }
+          },
+          false,
+          "Shapes"
         );
       toolbar.appendChild(shapesBtn);
 
@@ -938,7 +1139,7 @@ export default defineContentScript({
           }
           saveSession();
           updateToolbar();
-        })
+        }, undefined, false, "Text")
       );
 
       // Color picker
@@ -949,7 +1150,7 @@ export default defineContentScript({
         selectedColor = colors[(currentIndex + 1) % colors.length];
         saveSession();
         updateToolbar();
-      });
+      }, undefined, false, "Color");
       // Color indicator
       const colorIndicator = document.createElement("div");
       colorIndicator.style.cssText = `
@@ -960,8 +1161,7 @@ export default defineContentScript({
         height: 12px;
         background: ${getColorValue(selectedColor)};
         border-radius: 2px;
-        border: 1px solid #fff;
-        box-shadow: 0 0 0 1px rgba(0,0,0,0.1);
+        border: 1px solid rgba(255, 255, 255, 0.6);
       `;
       colorBtn.style.position = "relative";
       colorBtn.appendChild(colorIndicator);
@@ -998,14 +1198,14 @@ export default defineContentScript({
       toolbar.appendChild(
         createIconButton("undo", false, () => {
           undo();
-        }, undefined, undoStack.length === 0)
+        }, undefined, undoStack.length === 0, "Undo")
       );
 
       // Redo button
       toolbar.appendChild(
         createIconButton("redo", false, () => {
           redo();
-        }, undefined, redoStack.length === 0)
+        }, undefined, redoStack.length === 0, "Redo")
       );
 
       // Eraser tool
@@ -1017,7 +1217,7 @@ export default defineContentScript({
           }
           saveSession();
           updateToolbar();
-        })
+        }, undefined, false, "Eraser")
       );
 
       // Clear All button
@@ -1037,12 +1237,31 @@ export default defineContentScript({
           
           annotations.length = 0;
           textAnnotations.length = 0;
-          redrawAll();
+    redrawAll();
           updateTextAnnotations();
-        })
+        }, undefined, false, "Clear")
+      );
+
+      // Viewport screenshot button
+      toolbar.appendChild(
+        createIconButton("camera", false, () => {
+          captureViewport();
+        }, undefined, false, "Capture")
+      );
+
+      // Full page screenshot button
+      toolbar.appendChild(
+        createIconButton("scan", false, () => {
+          showFullPageCaptureModal();
+        }, undefined, false, "Full Page")
       );
 
       overlay.appendChild(toolbar);
+      
+      // Update theme after toolbar is in DOM
+      setTimeout(() => {
+        updateToolbarTheme();
+      }, 50);
     };
 
     const updateToolbar = () => {
@@ -1489,51 +1708,867 @@ export default defineContentScript({
 
     window.addEventListener("resize", handleResize);
 
-    // Keyboard shortcuts
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (
-        e.target instanceof HTMLInputElement ||
-        e.target instanceof HTMLTextAreaElement
-      ) {
-        return;
+    // Keyboard shortcuts removed - toolbar buttons are the only way to change tools
+
+    // Helper: Wait for browser repaint and layout flush
+    const waitForRepaint = async (delayMs: number = 150): Promise<void> => {
+      // Wait for two animation frames to ensure repaint
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+      
+      // Force layout read to flush any pending layout changes
+      document.body.getBoundingClientRect();
+      
+      // Additional delay to ensure visibility changes are applied
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+    };
+
+    // Helper: Detach overlay from render tree for first screenshot (compositor-level fix)
+    const detachOverlayForFirstCapture = (): {
+      overlayDisplay: string;
+      canvasDisplay: string;
+    } => {
+      const overlayEl = document.getElementById("annoted-overlay");
+      const canvasEl = document.getElementById("canvas-draw");
+      
+      const original = {
+        overlayDisplay: overlayEl ? overlayEl.style.display || "" : "",
+        canvasDisplay: canvasEl ? canvasEl.style.display || "" : "",
+      };
+
+      // Use display:none to completely remove from render tree
+      if (overlayEl) {
+        overlayEl.style.display = "none";
+      }
+      if (canvasEl) {
+        canvasEl.style.display = "none";
       }
 
-      if (e.key === "p" || e.key === "P") {
-        e.preventDefault();
-        activeTool = activeTool === "pen" ? null : "pen";
-        if (canvas) {
-          canvas.style.pointerEvents = activeTool ? "auto" : "none";
+      return original;
+    };
+
+    // Helper: Restore overlay to render tree
+    const restoreOverlayAfterFirstCapture = (original: {
+      overlayDisplay: string;
+      canvasDisplay: string;
+    }) => {
+      const overlayEl = document.getElementById("annoted-overlay");
+      const canvasEl = document.getElementById("canvas-draw");
+
+      if (overlayEl) {
+        if (original.overlayDisplay) {
+          overlayEl.style.display = original.overlayDisplay;
+        } else {
+          overlayEl.style.removeProperty("display");
         }
-        saveSession();
-        updateToolbar();
-      } else if (e.key === "h" || e.key === "H") {
-        e.preventDefault();
-        activeTool = activeTool === "highlighter" ? null : "highlighter";
-        if (canvas) {
-          canvas.style.pointerEvents = activeTool ? "auto" : "none";
+      }
+      
+      if (canvasEl) {
+        if (original.canvasDisplay) {
+          canvasEl.style.display = original.canvasDisplay;
+        } else {
+          canvasEl.style.removeProperty("display");
         }
-        saveSession();
-        updateToolbar();
-      } else if (e.key === "m" || e.key === "M") {
-        e.preventDefault();
-        activeTool = activeTool === "move" ? null : "move";
-        if (canvas) {
-          canvas.style.pointerEvents = activeTool ? "auto" : "none";
-        }
-        saveSession();
-        updateToolbar();
-      } else if (e.key === "r" || e.key === "R") {
-        e.preventDefault();
-        activeTool = activeTool === "eraser" ? null : "eraser";
-        if (canvas) {
-          canvas.style.pointerEvents = activeTool ? "auto" : "none";
-        }
-        saveSession();
-        updateToolbar();
       }
     };
 
-    document.addEventListener("keydown", handleKeyDown);
+    // Helper: Extended settling phase for first screenshot only
+    const waitForFirstCaptureSettling = async (): Promise<{
+      originalBackground: string;
+      overlayState: { overlayDisplay: string; canvasDisplay: string };
+    }> => {
+      // Detach overlay from render tree (compositor-level fix)
+      const overlayState = detachOverlayForFirstCapture();
+      
+      // Triple requestAnimationFrame for thorough repaint
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+      
+      // Extended delay for compositor to fully remove overlay
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      
+      // Force layout flush
+      document.documentElement.offsetHeight;
+      
+      // Temporarily set white background to prevent blending artifacts
+      const originalBackground = document.documentElement.style.background || "";
+      document.documentElement.style.background = "#ffffff";
+      
+      // Wait for background change to apply
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+      
+      return { originalBackground, overlayState };
+    };
+
+    // Helper: Restore background after first capture
+    const restoreBackground = (originalBackground: string) => {
+      if (originalBackground) {
+        document.documentElement.style.background = originalBackground;
+      } else {
+        document.documentElement.style.removeProperty("background");
+      }
+    };
+
+    // Helper: Hide scrollbar during capture
+    const hideScrollbar = (): {
+      scrollbarWidth: string;
+      msOverflowStyle: string;
+      overflow: string;
+    } => {
+      const style = document.documentElement.style;
+      const original = {
+        scrollbarWidth: style.scrollbarWidth || "",
+        msOverflowStyle: (style as any).msOverflowStyle || "",
+        overflow: style.overflow || "",
+      };
+
+      style.scrollbarWidth = "none";
+      (style as any).msOverflowStyle = "none";
+      style.overflow = "hidden";
+
+      return original;
+    };
+
+    // Helper: Restore scrollbar
+    const restoreScrollbar = (original: {
+      scrollbarWidth: string;
+      msOverflowStyle: string;
+      overflow: string;
+    }) => {
+      const style = document.documentElement.style;
+      
+      if (original.scrollbarWidth) {
+        style.scrollbarWidth = original.scrollbarWidth;
+      } else {
+        style.removeProperty("scrollbar-width");
+      }
+
+      if (original.msOverflowStyle) {
+        (style as any).msOverflowStyle = original.msOverflowStyle;
+      } else {
+        style.removeProperty("-ms-overflow-style");
+      }
+
+      if (original.overflow) {
+        style.overflow = original.overflow;
+      } else {
+        style.removeProperty("overflow");
+      }
+    };
+
+    // Helper: Ensure annotation canvas is visible and ready for capture
+    const ensureCanvasVisible = () => {
+      if (canvas) {
+        canvas.style.visibility = "visible";
+        canvas.style.opacity = "1";
+        // Ensure canvas is above page content
+        if (canvas.parentElement) {
+          canvas.parentElement.style.zIndex = "2147483647";
+        }
+      }
+    };
+
+    // Helper: Detect and store sticky/fixed elements (excluding Annoted)
+    const detectStickyFixedElements = (): HTMLElement[] => {
+      const stickyFixedElements: HTMLElement[] = [];
+      const allElements = document.querySelectorAll("*");
+
+      allElements.forEach((el) => {
+        if (!(el instanceof HTMLElement)) return;
+
+        // Skip Annoted elements
+        if (
+          el.id === "annoted-overlay" ||
+          el.id === "annoted-canvas" ||
+          el.id === "annoted-toolbar" ||
+          el.id?.startsWith("annoted-")
+        ) {
+          return;
+        }
+
+        // Check computed style for fixed/sticky positioning
+        const computedStyle = window.getComputedStyle(el);
+        const position = computedStyle.position;
+
+        if (position === "fixed" || position === "sticky") {
+          stickyFixedElements.push(el);
+        }
+      });
+
+      return stickyFixedElements;
+    };
+
+    // Helper: Hide Annoted UI elements only
+    const hideAnnotedUI = (): Array<{ element: HTMLElement; originalVisibility: string }> => {
+      const hiddenElements: Array<{ element: HTMLElement; originalVisibility: string }> = [];
+
+      // Hide Annoted toolbar
+      const toolbar = document.getElementById("annoted-toolbar");
+      if (toolbar) {
+        hiddenElements.push({
+          element: toolbar,
+          originalVisibility: toolbar.style.visibility || "",
+        });
+        toolbar.style.visibility = "hidden";
+      }
+
+      // Hide any open dropdowns
+      const dropdowns = document.querySelectorAll('[id^="annoted-dropdown"]');
+      dropdowns.forEach((dropdown) => {
+        if (dropdown instanceof HTMLElement) {
+          hiddenElements.push({
+            element: dropdown,
+            originalVisibility: dropdown.style.visibility || "",
+          });
+          dropdown.style.visibility = "hidden";
+        }
+      });
+
+      // Hide capture modal if present
+      const modal = document.getElementById("annoted-capture-modal");
+      if (modal) {
+        hiddenElements.push({
+          element: modal,
+          originalVisibility: modal.style.visibility || "",
+        });
+        modal.style.visibility = "hidden";
+      }
+
+      // Hide backdrop if present
+      const backdrop = document.querySelector('[style*="background: rgba(0,0,0,0.3)"]');
+      if (backdrop && backdrop instanceof HTMLElement) {
+        hiddenElements.push({
+          element: backdrop,
+          originalVisibility: backdrop.style.visibility || "",
+        });
+        backdrop.style.visibility = "hidden";
+      }
+
+      return hiddenElements;
+    };
+
+    // Helper: Detect and store sidebar elements (excluding Annoted)
+    const detectSidebars = (): HTMLElement[] => {
+      const sidebars: HTMLElement[] = [];
+      const allElements = document.querySelectorAll("*");
+
+      allElements.forEach((el) => {
+        if (!(el instanceof HTMLElement)) return;
+
+        // Skip Annoted elements
+        if (
+          el.id === "annoted-overlay" ||
+          el.id === "annoted-canvas" ||
+          el.id === "annoted-toolbar" ||
+          el.id?.startsWith("annoted-")
+        ) {
+          return;
+        }
+
+        // Check for sidebar patterns
+        let isSidebar = false;
+
+        // Check role attribute
+        const role = el.getAttribute("role");
+        if (role === "navigation") {
+          isSidebar = true;
+        }
+
+        // Check semantic HTML
+        if (el.tagName.toLowerCase() === "aside") {
+          isSidebar = true;
+        }
+
+        // Check class names
+        const className = el.className?.toLowerCase() || "";
+        if (
+          className.includes("sidebar") ||
+          className.includes("sidenav") ||
+          className.includes("nav-drawer") ||
+          className.includes("side-nav") ||
+          className.includes("side-bar")
+        ) {
+          isSidebar = true;
+        }
+
+        // Check ID
+        const id = el.id?.toLowerCase() || "";
+        if (
+          id.includes("sidebar") ||
+          id.includes("sidenav") ||
+          id.includes("nav-drawer") ||
+          id.includes("side-nav") ||
+          id.includes("side-bar")
+        ) {
+          isSidebar = true;
+        }
+
+        if (isSidebar) {
+          sidebars.push(el);
+        }
+      });
+
+      return sidebars;
+    };
+
+    // Helper: Hide sticky/fixed website elements
+    const hideStickyFixedElements = (
+      stickyFixedElements: HTMLElement[]
+    ): Array<{ element: HTMLElement; originalVisibility: string }> => {
+      const hiddenElements: Array<{ element: HTMLElement; originalVisibility: string }> = [];
+
+      stickyFixedElements.forEach((el) => {
+        // Only hide if it's not already hidden
+        const currentVisibility = el.style.visibility || "";
+        if (currentVisibility !== "hidden") {
+          hiddenElements.push({
+            element: el,
+            originalVisibility: currentVisibility,
+          });
+          el.style.visibility = "hidden";
+        }
+      });
+
+      return hiddenElements;
+    };
+
+    // Helper: Hide sidebar elements
+    const hideSidebars = (
+      sidebars: HTMLElement[]
+    ): Array<{ element: HTMLElement; originalVisibility: string }> => {
+      const hiddenElements: Array<{ element: HTMLElement; originalVisibility: string }> = [];
+
+      sidebars.forEach((el) => {
+        // Only hide if it's not already hidden
+        const currentVisibility = el.style.visibility || "";
+        if (currentVisibility !== "hidden") {
+          hiddenElements.push({
+            element: el,
+            originalVisibility: currentVisibility,
+          });
+          el.style.visibility = "hidden";
+        }
+      });
+
+      return hiddenElements;
+    };
+
+    // Helper: Restore elements after capture
+    const restoreElementsAfterCapture = (
+      hiddenElements: Array<{ element: HTMLElement; originalVisibility: string }>
+    ) => {
+      hiddenElements.forEach(({ element, originalVisibility }) => {
+        if (element && element.isConnected) {
+          if (originalVisibility) {
+            element.style.visibility = originalVisibility;
+          } else {
+            element.style.removeProperty("visibility");
+          }
+        }
+      });
+    };
+
+    // Capture current viewport with annotations
+    const captureViewport = async () => {
+      // Hide Annoted UI only (keep sticky/fixed headers visible for viewport capture)
+      const hiddenAnnotedUI = hideAnnotedUI();
+      try {
+        // Wait for UI to hide and browser to repaint
+        await waitForRepaint(150);
+
+        // Request screenshot from background script
+        chrome.runtime.sendMessage(
+          { action: "captureVisibleTab" },
+          (response) => {
+            // Restore UI immediately after capture
+            restoreElementsAfterCapture(hiddenAnnotedUI);
+
+            if (chrome.runtime.lastError) {
+              console.error("[Annoted] Screenshot error:", chrome.runtime.lastError);
+              return;
+            }
+            if (response?.dataUrl) {
+              // Download the screenshot
+              const link = document.createElement("a");
+              link.href = response.dataUrl;
+              link.download = `annoted-viewport-${Date.now()}.png`;
+              link.click();
+            }
+          }
+        );
+      } catch (error) {
+        console.error("[Annoted] Viewport capture error:", error);
+        restoreElementsAfterCapture(hiddenAnnotedUI);
+      }
+    };
+
+    // Show full page capture modal
+    const showFullPageCaptureModal = () => {
+      // Create modal
+      const modal = document.createElement("div");
+      modal.id = "annoted-capture-modal";
+      modal.style.cssText = `
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        background: white;
+        border-radius: 12px;
+        padding: 24px;
+        z-index: 2147483650;
+        pointer-events: auto;
+        min-width: 300px;
+        font-family: Arial, sans-serif;
+      `;
+
+      const title = document.createElement("div");
+      title.textContent = "Full Page Capture";
+      title.style.cssText = `
+        font-size: 18px;
+        font-weight: bold;
+        margin-bottom: 16px;
+        color: #000;
+      `;
+      modal.appendChild(title);
+
+      const formatLabel = document.createElement("div");
+      formatLabel.textContent = "Export Format:";
+      formatLabel.style.cssText = `
+        font-size: 14px;
+        margin-bottom: 8px;
+        color: #666;
+      `;
+      modal.appendChild(formatLabel);
+
+      let selectedFormat: "png" | "pdf" = "png";
+
+      const formatContainer = document.createElement("div");
+      formatContainer.style.cssText = `
+        display: flex;
+        gap: 8px;
+        margin-bottom: 20px;
+      `;
+
+      const pngBtn = document.createElement("button");
+      pngBtn.textContent = "PNG";
+      pngBtn.style.cssText = `
+        flex: 1;
+        padding: 10px;
+        border: 2px solid #000;
+        background: white;
+        border-radius: 6px;
+        cursor: pointer;
+        font-size: 14px;
+      `;
+      pngBtn.onclick = () => {
+        selectedFormat = "png";
+        pngBtn.style.borderColor = "#000";
+        pngBtn.style.background = "#f0f0f0";
+        pdfBtn.style.borderColor = "#ccc";
+        pdfBtn.style.background = "white";
+      };
+      // Set initial state
+      selectedFormat = "png";
+      pngBtn.style.borderColor = "#000";
+      pngBtn.style.background = "#f0f0f0";
+
+      const pdfBtn = document.createElement("button");
+      pdfBtn.textContent = "PDF";
+      pdfBtn.style.cssText = `
+        flex: 1;
+        padding: 10px;
+        border: 2px solid #ccc;
+        background: white;
+        border-radius: 6px;
+        cursor: pointer;
+        font-size: 14px;
+      `;
+      pdfBtn.onclick = () => {
+        selectedFormat = "pdf";
+        pdfBtn.style.borderColor = "#000";
+        pdfBtn.style.background = "#f0f0f0";
+        pngBtn.style.borderColor = "#ccc";
+        pngBtn.style.background = "white";
+      };
+
+      formatContainer.appendChild(pngBtn);
+      formatContainer.appendChild(pdfBtn);
+      modal.appendChild(formatContainer);
+
+      const buttonContainer = document.createElement("div");
+      buttonContainer.style.cssText = `
+        display: flex;
+        gap: 8px;
+        justify-content: flex-end;
+      `;
+
+      const cancelBtn = document.createElement("button");
+      cancelBtn.textContent = "Cancel";
+      cancelBtn.style.cssText = `
+        padding: 10px 20px;
+        border: 1px solid #ccc;
+        background: white;
+        border-radius: 6px;
+        cursor: pointer;
+        font-size: 14px;
+      `;
+      cancelBtn.onclick = () => {
+        modal.remove();
+      };
+
+      const captureBtn = document.createElement("button");
+      captureBtn.textContent = "Capture";
+      captureBtn.style.cssText = `
+        padding: 10px 20px;
+        border: none;
+        background: #000;
+        color: white;
+        border-radius: 6px;
+        cursor: pointer;
+        font-size: 14px;
+      `;
+      captureBtn.onclick = () => {
+        modal.remove();
+        captureFullPage(selectedFormat);
+      };
+
+      buttonContainer.appendChild(cancelBtn);
+      buttonContainer.appendChild(captureBtn);
+      modal.appendChild(buttonContainer);
+
+      // Close on outside click
+      const backdrop = document.createElement("div");
+      backdrop.style.cssText = `
+    position: fixed;
+    top: 0;
+    left: 0;
+        width: 100vw;
+        height: 100vh;
+        background: rgba(0,0,0,0.3);
+        z-index: 2147483649;
+        pointer-events: auto;
+      `;
+      backdrop.onclick = () => {
+        modal.remove();
+        backdrop.remove();
+      };
+
+      overlay.appendChild(backdrop);
+      overlay.appendChild(modal);
+    };
+
+    // Capture full page with scrolling and stitching (called from modal)
+    const captureFullPage = async (format: "png" | "pdf") => {
+      // Detect elements once before capture
+      const stickyFixedElements = detectStickyFixedElements();
+      const sidebars = detectSidebars();
+      
+      // Hide Annoted UI before capture
+      const hiddenAnnotedUI = hideAnnotedUI();
+      
+      // Hide sidebars before capture (they should never appear)
+      const hiddenSidebars = hideSidebars(sidebars);
+      
+      // Hide scrollbar during capture
+      const originalScrollbar = hideScrollbar();
+      
+      // Ensure annotation canvas is visible and ready
+      ensureCanvasVisible();
+      
+      // Wait for elements to hide and browser to repaint
+      await waitForRepaint(150);
+      
+      // Show loading indicator (will be hidden during actual capture)
+      const loading = document.createElement("div");
+      loading.id = "annoted-capture-loading";
+      loading.textContent = "Capturing full page...";
+      loading.style.cssText = `
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        background: rgba(0,0,0,0.8);
+        color: white;
+        padding: 16px 24px;
+        border-radius: 8px;
+        z-index: 2147483651;
+    pointer-events: none;
+        font-family: Arial, sans-serif;
+        font-size: 14px;
+        visibility: hidden;
+      `;
+      overlay.appendChild(loading);
+      
+      // Show loading indicator initially
+      loading.style.visibility = "visible";
+
+      // Track background and overlay state for safety restoration
+      let firstCaptureBackground = "";
+      let firstCaptureOverlayState: { overlayDisplay: string; canvasDisplay: string } | null = null;
+
+      try {
+
+        // Get page dimensions
+        const pageWidth = Math.max(
+          document.body.scrollWidth,
+          document.body.offsetWidth,
+          document.documentElement.clientWidth,
+          document.documentElement.scrollWidth,
+          document.documentElement.offsetWidth
+        );
+        const pageHeight = Math.max(
+          document.body.scrollHeight,
+          document.body.offsetHeight,
+          document.documentElement.clientHeight,
+          document.documentElement.scrollHeight,
+          document.documentElement.offsetHeight
+        );
+        const viewportWidth = window.innerWidth;
+        const viewportHeight = window.innerHeight;
+
+        // Calculate number of slices needed
+        const slicesX = Math.ceil(pageWidth / viewportWidth);
+        const slicesY = Math.ceil(pageHeight / viewportHeight);
+        const totalSlices = slicesX * slicesY;
+
+        const slices: string[] = [];
+        let currentSlice = 0;
+
+        // Save original scroll position
+        const originalScrollY = window.scrollY;
+        const originalScrollX = window.scrollX;
+
+        // Capture slices
+        let hiddenStickyElements: Array<{ element: HTMLElement; originalVisibility: string }> = [];
+        let firstCaptureOverlayState: { overlayDisplay: string; canvasDisplay: string } | null = null;
+        
+        for (let y = 0; y < slicesY; y++) {
+          for (let x = 0; x < slicesX; x++) {
+            const scrollX = Math.min(x * viewportWidth, pageWidth - viewportWidth);
+            const scrollY = Math.min(y * viewportHeight, pageHeight - viewportHeight);
+
+            // Scroll to position
+            window.scrollTo(scrollX, scrollY);
+            
+            // Wait for scroll to complete with proper repaint timing
+            await waitForRepaint(150);
+            
+            // Ensure canvas is visible before redrawing
+            ensureCanvasVisible();
+            
+            // Redraw annotations after scroll
+            redrawAll();
+            updateTextAnnotations();
+            
+            // Wait for annotations to render
+            await waitForRepaint(100);
+
+            // For first slice (top-left): Keep sticky/fixed elements visible
+            // For subsequent slices: Hide sticky/fixed elements to prevent repetition
+            const isFirstSlice = y === 0 && x === 0;
+            let originalBackground = "";
+            
+            if (isFirstSlice) {
+              // First slice: Restore sticky/fixed elements if they were hidden
+              restoreElementsAfterCapture(hiddenStickyElements);
+              hiddenStickyElements = [];
+              // Wait for elements to restore
+              await waitForRepaint(150);
+              
+              // Extended settling phase for first capture only
+              const backgroundState = await waitForFirstCaptureSettling();
+              originalBackground = backgroundState.originalBackground;
+            } else {
+              // Subsequent slices: Hide sticky/fixed elements
+              if (hiddenStickyElements.length === 0) {
+                hiddenStickyElements = hideStickyFixedElements(stickyFixedElements);
+                // Wait for elements to hide
+                await waitForRepaint(150);
+              }
+            }
+
+            // Hide loading indicator during capture
+            loading.style.visibility = "hidden";
+            
+            // Final wait and layout flush before capture (subsequent captures only)
+            await waitForRepaint(100);
+
+            // Capture this slice
+            const sliceDataUrl = await new Promise<string>((resolve, reject) => {
+              chrome.runtime.sendMessage(
+                { action: "captureVisibleTab" },
+                (response) => {
+                  if (chrome.runtime.lastError) {
+                    reject(new Error(chrome.runtime.lastError.message));
+                    return;
+                  }
+                  if (response?.dataUrl) {
+                    resolve(response.dataUrl);
+                  } else {
+                    reject(new Error("Failed to capture slice"));
+                  }
+                }
+              );
+            });
+
+            slices.push(sliceDataUrl);
+            currentSlice++;
+            
+            // Update loading text and show briefly (then hide for next capture)
+            loading.textContent = `Capturing... ${currentSlice}/${totalSlices}`;
+            loading.style.visibility = "visible";
+            await new Promise((resolve) => setTimeout(resolve, 50));
+          }
+        }
+
+        // Restore sticky/fixed elements after all captures
+        restoreElementsAfterCapture(hiddenStickyElements);
+        
+        // Restore sidebars after all captures
+        restoreElementsAfterCapture(hiddenSidebars);
+
+        // Restore original scroll position
+        window.scrollTo(originalScrollX, originalScrollY);
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        redrawAll();
+        updateTextAnnotations();
+
+        // Remove loading indicator
+        loading.remove();
+
+        // Stitch slices together
+        const stitchedImage = await stitchImages(slices, slicesX, slicesY, viewportWidth, viewportHeight, pageWidth, pageHeight);
+
+        // Export based on format
+        if (format === "pdf") {
+          await exportAsPDF(stitchedImage, pageWidth, pageHeight);
+    } else {
+          downloadImage(stitchedImage, "annoted-fullpage");
+        }
+      } catch (error) {
+        console.error("[Annoted] Full page capture error:", error);
+        // Fallback to viewport capture
+        alert("Full page capture failed. Falling back to viewport capture.");
+        captureViewport();
+      } finally {
+        // Always restore overlay (safety measure - in case first capture failed)
+        if (firstCaptureOverlayState) {
+          restoreOverlayAfterFirstCapture(firstCaptureOverlayState);
+        }
+        // Always restore background (safety measure)
+        if (firstCaptureBackground !== undefined && firstCaptureBackground !== "") {
+          restoreBackground(firstCaptureBackground);
+        }
+        // Always restore scrollbar
+        restoreScrollbar(originalScrollbar);
+        // Always restore Annoted UI elements
+        restoreElementsAfterCapture(hiddenAnnotedUI);
+        // Always restore sidebars
+        restoreElementsAfterCapture(hiddenSidebars);
+        // Remove loading if still present
+        const loadingEl = document.getElementById("annoted-capture-loading");
+        if (loadingEl) loadingEl.remove();
+      }
+    };
+
+    // Stitch image slices together
+    const stitchImages = async (
+      slices: string[],
+      slicesX: number,
+      slicesY: number,
+      viewportWidth: number,
+      viewportHeight: number,
+      pageWidth: number,
+      pageHeight: number
+    ): Promise<string> => {
+      return new Promise((resolve, reject) => {
+        // Create offscreen canvas for stitching
+        const canvas = document.createElement("canvas");
+        canvas.width = pageWidth;
+        canvas.height = pageHeight;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) {
+          reject(new Error("Failed to create canvas context"));
+          return;
+        }
+
+        let loadedCount = 0;
+        const images: HTMLImageElement[] = [];
+
+        slices.forEach((dataUrl, index) => {
+          const img = new Image();
+          img.onload = () => {
+            images[index] = img;
+            loadedCount++;
+
+            if (loadedCount === slices.length) {
+              // All images loaded, stitch them
+              let sliceIndex = 0;
+              for (let y = 0; y < slicesY; y++) {
+                for (let x = 0; x < slicesX; x++) {
+                  const img = images[sliceIndex];
+                  const destX = x * viewportWidth;
+                  const destY = y * viewportHeight;
+                  
+                  // Calculate actual dimensions for last slices
+                  const sliceWidth = x === slicesX - 1 ? pageWidth - destX : viewportWidth;
+                  const sliceHeight = y === slicesY - 1 ? pageHeight - destY : viewportHeight;
+
+                  ctx.drawImage(img, 0, 0, img.width, img.height, destX, destY, sliceWidth, sliceHeight);
+                  sliceIndex++;
+                }
+              }
+
+              // Convert to data URL
+              resolve(canvas.toDataURL("image/png", 1.0));
+            }
+          };
+          img.onerror = () => {
+            reject(new Error(`Failed to load slice ${index}`));
+          };
+          img.src = dataUrl;
+        });
+      });
+    };
+
+    // Export as PDF using jsPDF
+    const exportAsPDF = async (imageDataUrl: string, width: number, height: number) => {
+      try {
+        // Dynamic import of jsPDF
+        const { jsPDF } = await import("jspdf");
+        
+        // Calculate PDF dimensions (A4 ratio or maintain aspect)
+        const pdfWidth = 210; // A4 width in mm
+        const aspectRatio = height / width;
+        const pdfHeight = pdfWidth * aspectRatio;
+
+        const pdf = new jsPDF({
+          orientation: pdfHeight > pdfWidth ? "portrait" : "landscape",
+          unit: "mm",
+          format: [pdfWidth, pdfHeight],
+        });
+
+        // Add image to PDF
+        pdf.addImage(imageDataUrl, "PNG", 0, 0, pdfWidth, pdfHeight, undefined, "FAST");
+
+        // Download PDF
+        const filename = `annoted-fullpage-${Date.now()}.pdf`;
+        pdf.save(filename);
+      } catch (error) {
+        console.error("[Annoted] PDF export error:", error);
+        // Fallback to PNG
+        downloadImage(imageDataUrl, "annoted-fullpage");
+      }
+    };
+
+    // Download image helper
+    const downloadImage = (dataUrl: string, prefix: string) => {
+      const link = document.createElement("a");
+      link.href = dataUrl;
+      link.download = `${prefix}-${Date.now()}.png`;
+      link.click();
+    };
 
     // Listen for activation message
     chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -1544,8 +2579,232 @@ export default defineContentScript({
           activate();
         }
         sendResponse({ active: isActive });
+      } else if (message.action === "captureFullPage") {
+        // Handle full page capture request from background
+        const { pageWidth, pageHeight, viewportWidth, viewportHeight } = message;
+        captureFullPageInternal(pageWidth, pageHeight, viewportWidth, viewportHeight)
+          .then((result) => {
+            chrome.runtime.sendMessage({
+              action: "fullPageCaptureResult",
+              screenshotData: result.dataUrl,
+              isPDF: result.isPDF,
+            });
+          })
+          .catch((error) => {
+            chrome.runtime.sendMessage({
+              action: "fullPageCaptureResult",
+              error: error.message,
+            });
+          });
+        sendResponse({ success: true });
+      } else if (message.action === "getCanvasData") {
+        // Return canvas data for compositing (if needed)
+        if (canvas) {
+          sendResponse({ canvasData: canvas.toDataURL("image/png") });
+        } else {
+          sendResponse({ canvasData: null });
+        }
       }
       return true;
     });
+
+    // Internal full page capture (called from background or modal)
+    const captureFullPageInternal = async (
+      pageWidth: number,
+      pageHeight: number,
+      viewportWidth: number,
+      viewportHeight: number
+    ): Promise<{ dataUrl: string; isPDF: boolean }> => {
+      // Detect elements once before capture
+      const stickyFixedElements = detectStickyFixedElements();
+      const sidebars = detectSidebars();
+      
+      // Hide Annoted UI before capture
+      const hiddenAnnotedUI = hideAnnotedUI();
+      
+      // Hide sidebars before capture (they should never appear)
+      const hiddenSidebars = hideSidebars(sidebars);
+      
+      // Hide scrollbar during capture
+      const originalScrollbar = hideScrollbar();
+      
+      // Ensure annotation canvas is visible and ready
+      ensureCanvasVisible();
+      
+      // Wait for elements to hide and browser to repaint
+      await waitForRepaint(150);
+      
+      // Track background and overlay state for safety restoration
+      let firstCaptureBackground = "";
+      let firstCaptureOverlayState: { overlayDisplay: string; canvasDisplay: string } | null = null;
+      
+      try {
+        // Save original scroll position
+        const originalScrollY = window.scrollY;
+        const originalScrollX = window.scrollX;
+
+        // Calculate number of slices needed
+        const slicesX = Math.ceil(pageWidth / viewportWidth);
+        const slicesY = Math.ceil(pageHeight / viewportHeight);
+        const totalSlices = slicesX * slicesY;
+
+        const slices: string[] = [];
+        let hiddenStickyElements: Array<{ element: HTMLElement; originalVisibility: string }> = [];
+        let firstCaptureOverlayState: { overlayDisplay: string; canvasDisplay: string } | null = null;
+
+        // Capture slices
+        for (let y = 0; y < slicesY; y++) {
+          for (let x = 0; x < slicesX; x++) {
+            const scrollX = Math.min(x * viewportWidth, pageWidth - viewportWidth);
+            const scrollY = Math.min(y * viewportHeight, pageHeight - viewportHeight);
+
+            // Scroll to position
+            window.scrollTo(scrollX, scrollY);
+            
+            // Wait for scroll to complete with proper repaint timing
+            await waitForRepaint(150);
+            
+            // Ensure canvas is visible before redrawing
+            ensureCanvasVisible();
+            
+            // Redraw annotations after scroll
+            redrawAll();
+            updateTextAnnotations();
+            
+            // Wait for annotations to render
+            await waitForRepaint(100);
+
+            // For first slice (top-left): Keep sticky/fixed elements visible
+            // For subsequent slices: Hide sticky/fixed elements to prevent repetition
+            const isFirstSlice = y === 0 && x === 0;
+            let originalBackground = "";
+            
+            if (isFirstSlice) {
+              // First slice: Restore sticky/fixed elements if they were hidden
+              restoreElementsAfterCapture(hiddenStickyElements);
+              hiddenStickyElements = [];
+              // Wait for elements to restore
+              await waitForRepaint(150);
+              
+              // Extended settling phase for first capture only (detaches overlay from render tree)
+              const settlingState = await waitForFirstCaptureSettling();
+              originalBackground = settlingState.originalBackground;
+              firstCaptureBackground = originalBackground; // Track for safety restoration
+              
+              // Store overlay state for restoration
+              const overlayState = settlingState.overlayState;
+              firstCaptureOverlayState = overlayState; // Track for safety restoration
+              
+              // Minimal final wait before first capture
+              await waitForRepaint(50);
+
+              // Capture first slice
+              const sliceDataUrl = await new Promise<string>((resolve, reject) => {
+                chrome.runtime.sendMessage(
+                  { action: "captureVisibleTab" },
+                  (response) => {
+                    if (chrome.runtime.lastError) {
+                      reject(new Error(chrome.runtime.lastError.message));
+                      return;
+                    }
+                    if (response?.dataUrl) {
+                      resolve(response.dataUrl);
+                    } else {
+                      reject(new Error("Failed to capture slice"));
+                    }
+                  }
+                );
+              });
+
+              slices.push(sliceDataUrl);
+              
+              // Restore overlay immediately after first capture
+              restoreOverlayAfterFirstCapture(overlayState);
+              firstCaptureOverlayState = null; // Clear after successful restoration
+              
+              // Restore background immediately after first capture
+              if (originalBackground !== undefined) {
+                restoreBackground(originalBackground);
+              }
+              
+              // Ensure canvas is visible again for subsequent operations
+              ensureCanvasVisible();
+              
+              // Continue to next iteration
+              continue;
+            } else {
+              // Subsequent slices: Hide sticky/fixed elements
+              if (hiddenStickyElements.length === 0) {
+                hiddenStickyElements = hideStickyFixedElements(stickyFixedElements);
+                // Wait for elements to hide
+                await waitForRepaint(150);
+              }
+            }
+
+            // Final wait and layout flush before capture
+            // Use shorter delay for subsequent captures
+            if (isFirstSlice) {
+              // First capture already has extended settling, minimal final wait
+              await waitForRepaint(50);
+            } else {
+              // Subsequent captures use normal timing
+              await waitForRepaint(100);
+            }
+
+            // Capture this slice
+            const sliceDataUrl = await new Promise<string>((resolve, reject) => {
+              chrome.runtime.sendMessage(
+                { action: "captureVisibleTab" },
+                (response) => {
+                  if (chrome.runtime.lastError) {
+                    reject(new Error(chrome.runtime.lastError.message));
+                    return;
+                  }
+                  if (response?.dataUrl) {
+                    resolve(response.dataUrl);
+                  } else {
+                    reject(new Error("Failed to capture slice"));
+                  }
+                }
+              );
+            });
+
+            slices.push(sliceDataUrl);
+          }
+        }
+
+        // Restore sticky/fixed elements after all captures
+        restoreElementsAfterCapture(hiddenStickyElements);
+        
+        // Restore sidebars after all captures
+        restoreElementsAfterCapture(hiddenSidebars);
+
+        // Restore original scroll position
+        window.scrollTo(originalScrollX, originalScrollY);
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        redrawAll();
+        updateTextAnnotations();
+
+        // Stitch slices together
+        const stitchedImage = await stitchImages(slices, slicesX, slicesY, viewportWidth, viewportHeight, pageWidth, pageHeight);
+
+        return { dataUrl: stitchedImage, isPDF: false };
+      } finally {
+        // Always restore overlay (safety measure - in case first capture failed)
+        if (firstCaptureOverlayState) {
+          restoreOverlayAfterFirstCapture(firstCaptureOverlayState);
+        }
+        // Always restore background (safety measure)
+        if (firstCaptureBackground !== undefined && firstCaptureBackground !== "") {
+          restoreBackground(firstCaptureBackground);
+        }
+        // Always restore scrollbar
+        restoreScrollbar(originalScrollbar);
+        // Always restore Annoted UI elements
+        restoreElementsAfterCapture(hiddenAnnotedUI);
+        // Always restore sidebars
+        restoreElementsAfterCapture(hiddenSidebars);
+      }
+    };
   },
 });
