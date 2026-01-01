@@ -31,6 +31,7 @@ export default defineContentScript({
     let activeTool: Tool = null;
     let selectedColor: Color = "red";
     let shapeMode: ShapeMode = "outline";
+    let lastUsedShape: "rectangle" | "circle" | "arrow" = "rectangle";
     let isDrawing = false;
     let startPoint: { x: number; y: number } | null = null;
     let currentPath: Array<{ x: number; y: number }> = [];
@@ -202,108 +203,299 @@ export default defineContentScript({
       });
     };
 
-    // Simple toolbar
+    // Icon SVG helper - Lucide-style icons
+    const createIcon = (name: string): string => {
+      const icons: Record<string, string> = {
+        pencil: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg>`,
+        move: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="5 9 2 12 5 15"/><polyline points="9 5 12 2 15 5"/><polyline points="15 19 12 22 9 19"/><polyline points="19 9 22 12 19 15"/><line x1="2" y1="12" x2="22" y2="12"/><line x1="12" y1="2" x2="12" y2="22"/></svg>`,
+        square: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/></svg>`,
+        stickynote: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15.5 3H5a2 2 0 0 0-2 2v14c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2V8.5L15.5 3Z"/><path d="M15 3v6h6"/></svg>`,
+        palette: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="13.5" cy="6.5" r=".5" fill="currentColor"/><circle cx="17.5" cy="10.5" r=".5" fill="currentColor"/><circle cx="8.5" cy="7.5" r=".5" fill="currentColor"/><circle cx="6.5" cy="12.5" r=".5" fill="currentColor"/><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z"/></svg>`,
+        camera: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></svg>`,
+        download: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>`,
+      };
+      return icons[name] || "";
+    };
+
+    // Close any open dropdowns
+    const closeDropdowns = () => {
+      const dropdowns = overlay.querySelectorAll(".annoted-dropdown");
+      dropdowns.forEach((d) => d.remove());
+    };
+
+    // Create dropdown menu
+    const createDropdown = (x: number, y: number, items: Array<{ label: string; onClick: () => void }>) => {
+      closeDropdowns();
+      const dropdown = document.createElement("div");
+      dropdown.className = "annoted-dropdown";
+      dropdown.style.cssText = `
+        position: fixed;
+        left: ${x}px;
+        top: ${y}px;
+        background: white;
+        border-radius: 8px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        padding: 4px;
+        z-index: 2147483649;
+        pointer-events: auto;
+        min-width: 120px;
+      `;
+
+      items.forEach((item) => {
+        if (item.label.startsWith("─")) {
+          // Separator
+          const sep = document.createElement("div");
+          sep.textContent = item.label;
+          sep.style.cssText = `
+            width: 100%;
+            padding: 4px 12px;
+            text-align: center;
+            color: #ccc;
+            font-size: 12px;
+            pointer-events: none;
+          `;
+          dropdown.appendChild(sep);
+        } else {
+          const btn = document.createElement("button");
+          btn.textContent = item.label;
+          btn.style.cssText = `
+            width: 100%;
+            padding: 8px 12px;
+            border: none;
+            background: white;
+            text-align: left;
+            cursor: pointer;
+            font-size: 14px;
+            border-radius: 4px;
+          `;
+          btn.onmouseenter = () => {
+            btn.style.background = "#f5f5f5";
+          };
+          btn.onmouseleave = () => {
+            btn.style.background = "white";
+          };
+          btn.onclick = () => {
+            item.onClick();
+            closeDropdowns();
+          };
+          dropdown.appendChild(btn);
+        }
+      });
+
+      overlay.appendChild(dropdown);
+
+      // Close on outside click
+      setTimeout(() => {
+        const closeOnClick = (e: MouseEvent) => {
+          if (!dropdown.contains(e.target as Node)) {
+            closeDropdowns();
+            document.removeEventListener("click", closeOnClick);
+          }
+        };
+        setTimeout(() => document.addEventListener("click", closeOnClick), 0);
+      }, 0);
+    };
+
+    // Vertical toolbar with icons
     const createToolbar = () => {
       const toolbar = document.createElement("div");
       toolbar.id = "annoted-toolbar";
       toolbar.style.cssText = `
         position: fixed;
-        bottom: 24px;
-        left: 50%;
-        transform: translateX(-50%);
+        top: 50%;
+        right: 16px;
+        transform: translateY(-50%);
         z-index: 2147483648;
         background: white;
-        padding: 12px 16px;
-        border-radius: 8px;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+        padding: 8px;
+        border-radius: 12px;
+        box-shadow: 0 2px 12px rgba(0,0,0,0.15);
         display: flex;
-        gap: 12px;
+        flex-direction: column;
+        gap: 4px;
         pointer-events: auto;
         font-family: Arial, sans-serif;
       `;
 
-      const tools: Array<{ tool: Tool; label: string; shortcut?: string }> = [
-        { tool: "pen", label: "Pen", shortcut: "P" },
-        { tool: "rectangle", label: "Rect" },
-        { tool: "circle", label: "Circle" },
-        { tool: "arrow", label: "Arrow" },
-        { tool: "text", label: "Text" },
-        { tool: "move", label: "Move", shortcut: "M" },
-      ];
-
-      tools.forEach(({ tool, label, shortcut }) => {
+      // Helper to create icon button
+      const createIconButton = (iconName: string, isActive: boolean, onClick: () => void, onRightClick?: () => void) => {
         const btn = document.createElement("button");
-        btn.textContent = shortcut ? `${label} (${shortcut})` : label;
+        btn.innerHTML = createIcon(iconName);
         btn.style.cssText = `
-          padding: 8px 12px;
-          border: ${activeTool === tool ? "2px solid #000" : "1px solid #ccc"};
-          background: ${activeTool === tool ? "#f0f0f0" : "white"};
+          width: 40px;
+          height: 40px;
+          padding: 0;
+          border: ${isActive ? "2px solid #000" : "1px solid #e0e0e0"};
+          background: ${isActive ? "#f0f0f0" : "white"};
+          border-radius: 8px;
           cursor: pointer;
-          font-size: 14px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          color: ${isActive ? "#000" : "#666"};
         `;
-        btn.onclick = () => {
-          activeTool = activeTool === tool ? null : tool;
+        btn.onclick = (e) => {
+          e.preventDefault();
+          onClick();
+        };
+        if (onRightClick) {
+          btn.oncontextmenu = (e) => {
+            e.preventDefault();
+            const rect = btn.getBoundingClientRect();
+            onRightClick();
+          };
+        }
+        return btn;
+      };
+
+      // Pen tool
+      toolbar.appendChild(
+        createIconButton("pencil", activeTool === "pen", () => {
+          activeTool = activeTool === "pen" ? null : "pen";
           if (canvas) {
             canvas.style.pointerEvents = activeTool ? "auto" : "none";
           }
           updateToolbar();
-        };
-        toolbar.appendChild(btn);
-      });
+        })
+      );
+
+      // Move tool
+      toolbar.appendChild(
+        createIconButton("move", activeTool === "move", () => {
+          activeTool = activeTool === "move" ? null : "move";
+          if (canvas) {
+            canvas.style.pointerEvents = activeTool ? "auto" : "none";
+          }
+          updateToolbar();
+        })
+      );
+
+      // Shapes tool (grouped)
+      const isShapeActive = activeTool === "rectangle" || activeTool === "circle" || activeTool === "arrow";
+      toolbar.appendChild(
+        createIconButton(
+          "square",
+          isShapeActive,
+          () => {
+            // Left click: toggle last used shape
+            if (isShapeActive) {
+              activeTool = null;
+              if (canvas) {
+                canvas.style.pointerEvents = "none";
+              }
+            } else {
+              activeTool = lastUsedShape;
+              if (canvas) {
+                canvas.style.pointerEvents = "auto";
+              }
+            }
+            updateToolbar();
+          },
+          () => {
+            // Right click: show shape dropdown
+            const btn = toolbar.querySelector('button:nth-child(3)') as HTMLElement;
+            const rect = btn.getBoundingClientRect();
+            createDropdown(rect.left - 130, rect.top, [
+              {
+                label: "Rectangle",
+                onClick: () => {
+                  lastUsedShape = "rectangle";
+                  activeTool = "rectangle";
+                  if (canvas) canvas.style.pointerEvents = "auto";
+                  updateToolbar();
+                },
+              },
+              {
+                label: "Circle",
+                onClick: () => {
+                  lastUsedShape = "circle";
+                  activeTool = "circle";
+                  if (canvas) canvas.style.pointerEvents = "auto";
+                  updateToolbar();
+                },
+              },
+              {
+                label: "Arrow",
+                onClick: () => {
+                  lastUsedShape = "arrow";
+                  activeTool = "arrow";
+                  if (canvas) canvas.style.pointerEvents = "auto";
+                  updateToolbar();
+                },
+              },
+              { label: "────────", onClick: () => { closeDropdowns(); } },
+              {
+                label: shapeMode === "outline" ? "✓ Outline" : "Outline",
+                onClick: () => {
+                  shapeMode = "outline";
+                  updateToolbar();
+                },
+              },
+              {
+                label: shapeMode === "filled" ? "✓ Filled" : "Filled",
+                onClick: () => {
+                  shapeMode = "filled";
+                  updateToolbar();
+                },
+              },
+            ]);
+          }
+        )
+      );
+
+      // Text tool
+      toolbar.appendChild(
+        createIconButton("stickynote", activeTool === "text", () => {
+          activeTool = activeTool === "text" ? null : "text";
+          if (canvas) {
+            canvas.style.pointerEvents = activeTool ? "auto" : "none";
+          }
+          updateToolbar();
+        })
+      );
 
       // Color picker
-      const colorBtn = document.createElement("button");
-      colorBtn.textContent = "Color";
-      colorBtn.style.cssText = `
-        padding: 8px 12px;
-        border: 1px solid #ccc;
-        background: white;
-        cursor: pointer;
-        font-size: 14px;
+      const colorBtn = createIconButton("palette", false, () => {
+        // Left click: cycle color
+        const colors: Color[] = ["red", "blue", "yellow", "white"];
+        const currentIndex = colors.indexOf(selectedColor);
+        selectedColor = colors[(currentIndex + 1) % colors.length];
+        updateToolbar();
+      });
+      // Color indicator
+      const colorIndicator = document.createElement("div");
+      colorIndicator.style.cssText = `
+        position: absolute;
+        bottom: 2px;
+        right: 2px;
+        width: 12px;
+        height: 12px;
+        background: ${getColorValue(selectedColor)};
+        border-radius: 2px;
+        border: 1px solid #fff;
+        box-shadow: 0 0 0 1px rgba(0,0,0,0.1);
       `;
-      const colors: Color[] = ["red", "blue", "yellow", "white"];
-      let colorIndex = 0;
-      colorBtn.onclick = () => {
-        colorIndex = (colorIndex + 1) % colors.length;
-        selectedColor = colors[colorIndex];
-        colorBtn.style.borderColor = getColorValue(selectedColor);
+      colorBtn.style.position = "relative";
+      colorBtn.appendChild(colorIndicator);
+      colorBtn.oncontextmenu = (e) => {
+        e.preventDefault();
+        const rect = colorBtn.getBoundingClientRect();
+        const colors: Color[] = ["red", "blue", "yellow", "white"];
+        const colorLabels: Record<Color, string> = { 
+          red: "Red", 
+          blue: "Blue", 
+          yellow: "Yellow", 
+          white: "Black"
+        };
+        createDropdown(rect.left - 130, rect.top, colors.map((color) => ({
+          label: selectedColor === color ? `✓ ${colorLabels[color]}` : colorLabels[color],
+          onClick: () => {
+            selectedColor = color;
+            updateToolbar();
+          },
+        })));
       };
-      colorBtn.style.borderColor = getColorValue(selectedColor);
       toolbar.appendChild(colorBtn);
-
-      // Shape mode toggle (for shapes)
-      const modeBtn = document.createElement("button");
-      modeBtn.textContent = shapeMode === "outline" ? "Outline" : "Filled";
-      modeBtn.style.cssText = `
-        padding: 8px 12px;
-        border: 1px solid #ccc;
-        background: white;
-        cursor: pointer;
-        font-size: 14px;
-      `;
-      modeBtn.onclick = () => {
-        shapeMode = shapeMode === "outline" ? "filled" : "outline";
-        modeBtn.textContent = shapeMode === "outline" ? "Outline" : "Filled";
-      };
-      toolbar.appendChild(modeBtn);
-
-      // Clear button
-      const clearBtn = document.createElement("button");
-      clearBtn.textContent = "Clear";
-      clearBtn.style.cssText = `
-        padding: 8px 12px;
-        border: 1px solid #ccc;
-        background: white;
-        cursor: pointer;
-        font-size: 14px;
-      `;
-      clearBtn.onclick = () => {
-        annotations.length = 0;
-        textAnnotations.length = 0;
-    redrawAll();
-        updateTextAnnotations();
-      };
-      toolbar.appendChild(clearBtn);
 
       overlay.appendChild(toolbar);
     };
