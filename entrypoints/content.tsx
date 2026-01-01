@@ -4,6 +4,7 @@ import type { Tool, Color, ShapeMode } from "../utils/types";
 
 // Annotation data structure - uses document coordinates
 interface Annotation {
+  id: string; // Unique ID for deletion tracking
   type: "pen" | "highlighter" | "rectangle" | "circle" | "arrow";
   start: { x: number; y: number };
   end?: { x: number; y: number };
@@ -59,7 +60,9 @@ export default defineContentScript({
       | { type: "editText"; id: string; oldText: string; newText: string }
       | { type: "moveAnnotation"; index: number; oldStart: { x: number; y: number }; oldEnd?: { x: number; y: number }; oldPath?: Array<{ x: number; y: number }>; newStart: { x: number; y: number }; newEnd?: { x: number; y: number }; newPath?: Array<{ x: number; y: number }> }
       | { type: "moveText"; id: string; oldPos: { x: number; y: number }; newPos: { x: number; y: number } }
-      | { type: "deleteText"; annotation: TextAnnotation };
+      | { type: "deleteText"; annotation: TextAnnotation }
+      | { type: "delete"; targetId: string; deletedAnnotation?: Annotation; deletedText?: TextAnnotation }
+      | { type: "clear_all"; deletedAnnotations: Annotation[]; deletedTexts: TextAnnotation[] };
 
     let undoStack: Command[] = [];
     let redoStack: Command[] = [];
@@ -74,7 +77,15 @@ export default defineContentScript({
     const saveSession = () => {
       try {
         const session = {
-          url: window.location.href,
+          version: 1,
+          pageUrl: window.location.href.split("#")[0].split("?")[0],
+          toolState: {
+            activeTool,
+            color: selectedColor,
+            penWidth,
+            shapeType: lastUsedShape,
+            shapeFillMode: shapeMode,
+          },
           actions: undoStack,
         };
         localStorage.setItem(getStorageKey(), JSON.stringify(session));
@@ -84,22 +95,33 @@ export default defineContentScript({
     };
 
     // Load session from localStorage
-    const loadSession = (): Command[] => {
+    const loadSession = (): { actions: Command[]; toolState?: any } => {
       try {
         const stored = localStorage.getItem(getStorageKey());
         if (stored) {
           const session = JSON.parse(stored);
           // Only restore if URL matches (excluding hash/query)
           const currentUrl = window.location.href.split("#")[0].split("?")[0];
-          const storedUrl = session.url.split("#")[0].split("?")[0];
-          if (currentUrl === storedUrl) {
-            return session.actions || [];
+          const storedUrl = session.pageUrl || session.url;
+          const normalizedStoredUrl = storedUrl ? storedUrl.split("#")[0].split("?")[0] : "";
+          
+          if (currentUrl === normalizedStoredUrl) {
+            return {
+              actions: session.actions || [],
+              toolState: session.toolState,
+            };
           }
         }
       } catch (e) {
         console.warn("[Annoted] Failed to load session:", e);
+        // Clear malformed session
+        try {
+          localStorage.removeItem(getStorageKey());
+        } catch (clearError) {
+          // Ignore clear errors
+        }
       }
-      return [];
+      return { actions: [] };
     };
 
     // Replay commands to restore state
@@ -133,8 +155,28 @@ export default defineContentScript({
             text.y = cmd.newPos.y;
           }
         } else if (cmd.type === "deleteText") {
-          // Delete is handled by not adding it in the first place during replay
-          // So we don't need to handle it here
+          // Remove text annotation
+          const index = textAnnotations.findIndex((t) => t.id === cmd.annotation.id);
+          if (index > -1) {
+            textAnnotations.splice(index, 1);
+          }
+        } else if (cmd.type === "delete") {
+          // Remove annotation or text
+          if (cmd.deletedAnnotation) {
+            const index = annotations.findIndex((a) => a.id === cmd.targetId);
+            if (index > -1) {
+              annotations.splice(index, 1);
+            }
+          } else if (cmd.deletedText) {
+            const index = textAnnotations.findIndex((t) => t.id === cmd.targetId);
+            if (index > -1) {
+              textAnnotations.splice(index, 1);
+            }
+          }
+        } else if (cmd.type === "clear_all") {
+          // Clear all annotations
+          annotations.length = 0;
+          textAnnotations.length = 0;
         }
       });
 
@@ -172,6 +214,21 @@ export default defineContentScript({
         if (index > -1) {
           textAnnotations.splice(index, 1);
         }
+      } else if (cmd.type === "delete") {
+        if (cmd.deletedAnnotation) {
+          const index = annotations.findIndex((a) => a.id === cmd.targetId);
+          if (index > -1) {
+            annotations.splice(index, 1);
+          }
+        } else if (cmd.deletedText) {
+          const index = textAnnotations.findIndex((t) => t.id === cmd.targetId);
+          if (index > -1) {
+            textAnnotations.splice(index, 1);
+          }
+        }
+      } else if (cmd.type === "clear_all") {
+        annotations.length = 0;
+        textAnnotations.length = 0;
       }
 
       // Add to undo stack and clear redo
@@ -402,6 +459,8 @@ export default defineContentScript({
         squareDashed: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="2 2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/></svg>`,
         squareFilled: `<svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/></svg>`,
         check: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>`,
+        eraser: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m7 21-4.3-4.3c-1-1-1-2.5 0-3.4l9.6-9.6c1-1 2.5-1 3.4 0l5.6 5.6c1 1 1 2.5 0 3.4L13 21"/><path d="M22 21H7"/><path d="m5 11 9 9"/></svg>`,
+        trash2: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>`,
         type: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 7 4 4 20 4 20 7"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/></svg>`,
         palette: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="13.5" cy="6.5" r=".5" fill="currentColor"/><circle cx="17.5" cy="10.5" r=".5" fill="currentColor"/><circle cx="8.5" cy="7.5" r=".5" fill="currentColor"/><circle cx="6.5" cy="12.5" r=".5" fill="currentColor"/><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z"/></svg>`,
         undo: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13"/></svg>`,
@@ -710,6 +769,7 @@ export default defineContentScript({
           if (canvas) {
             canvas.style.pointerEvents = activeTool ? "auto" : "none";
           }
+          saveSession();
           updateToolbar();
         })
       );
@@ -721,6 +781,7 @@ export default defineContentScript({
           if (canvas) {
             canvas.style.pointerEvents = activeTool ? "auto" : "none";
           }
+          saveSession();
           updateToolbar();
         })
       );
@@ -760,6 +821,7 @@ export default defineContentScript({
             isSelected: penWidth === w.value,
             onClick: () => {
               penWidth = w.value;
+              saveSession();
               updateToolbar();
             },
           });
@@ -775,6 +837,7 @@ export default defineContentScript({
           if (canvas) {
             canvas.style.pointerEvents = activeTool ? "auto" : "none";
           }
+          saveSession();
           updateToolbar();
         })
       );
@@ -785,19 +848,20 @@ export default defineContentScript({
         "square",
         isShapeActive,
         () => {
-          // Left click: toggle last used shape
-          if (isShapeActive) {
-            activeTool = null;
-            if (canvas) {
-              canvas.style.pointerEvents = "none";
-            }
+            // Left click: toggle last used shape
+            if (isShapeActive) {
+              activeTool = null;
+              if (canvas) {
+                canvas.style.pointerEvents = "none";
+              }
       } else {
-            activeTool = lastUsedShape;
-            if (canvas) {
-              canvas.style.pointerEvents = "auto";
+              activeTool = lastUsedShape;
+              if (canvas) {
+                canvas.style.pointerEvents = "auto";
+              }
             }
-          }
-          updateToolbar();
+            saveSession();
+            updateToolbar();
         },
         () => {
           // Right click: show shape dropdown
@@ -811,6 +875,7 @@ export default defineContentScript({
                   lastUsedShape = "rectangle";
                   activeTool = "rectangle";
                   if (canvas) canvas.style.pointerEvents = "auto";
+                  saveSession();
                   updateToolbar();
                 },
               },
@@ -822,6 +887,7 @@ export default defineContentScript({
                   lastUsedShape = "circle";
                   activeTool = "circle";
                   if (canvas) canvas.style.pointerEvents = "auto";
+                  saveSession();
                   updateToolbar();
                 },
               },
@@ -833,6 +899,7 @@ export default defineContentScript({
                   lastUsedShape = "arrow";
                   activeTool = "arrow";
                   if (canvas) canvas.style.pointerEvents = "auto";
+                  saveSession();
                   updateToolbar();
                 },
               },
@@ -843,6 +910,7 @@ export default defineContentScript({
                 isSelected: shapeMode === "outline",
                 onClick: () => {
                   shapeMode = "outline";
+                  saveSession();
                   updateToolbar();
                 },
               },
@@ -852,6 +920,7 @@ export default defineContentScript({
                 isSelected: shapeMode === "filled",
                 onClick: () => {
                   shapeMode = "filled";
+                  saveSession();
                   updateToolbar();
                 },
               },
@@ -867,6 +936,7 @@ export default defineContentScript({
           if (canvas) {
             canvas.style.pointerEvents = activeTool ? "auto" : "none";
           }
+          saveSession();
           updateToolbar();
         })
       );
@@ -877,6 +947,7 @@ export default defineContentScript({
         const colors: Color[] = ["red", "blue", "yellow", "white"];
         const currentIndex = colors.indexOf(selectedColor);
         selectedColor = colors[(currentIndex + 1) % colors.length];
+        saveSession();
         updateToolbar();
       });
       // Color indicator
@@ -916,6 +987,7 @@ export default defineContentScript({
           isSelected: selectedColor === color,
           onClick: () => {
             selectedColor = color;
+            saveSession();
             updateToolbar();
           },
         })));
@@ -936,6 +1008,40 @@ export default defineContentScript({
         }, undefined, redoStack.length === 0)
       );
 
+      // Eraser tool
+      toolbar.appendChild(
+        createIconButton("eraser", activeTool === "eraser", () => {
+          activeTool = activeTool === "eraser" ? null : "eraser";
+          if (canvas) {
+            canvas.style.pointerEvents = activeTool ? "auto" : "none";
+          }
+          saveSession();
+          updateToolbar();
+        })
+      );
+
+      // Clear All button
+      toolbar.appendChild(
+        createIconButton("trash2", false, () => {
+          if (annotations.length === 0 && textAnnotations.length === 0) return;
+          
+          // Create clear_all command
+          const deletedAnnotations = JSON.parse(JSON.stringify(annotations));
+          const deletedTexts = JSON.parse(JSON.stringify(textAnnotations));
+          
+          executeCommand({
+            type: "clear_all",
+            deletedAnnotations,
+            deletedTexts,
+          });
+          
+          annotations.length = 0;
+          textAnnotations.length = 0;
+          redrawAll();
+          updateTextAnnotations();
+        })
+      );
+
       overlay.appendChild(toolbar);
     };
 
@@ -947,6 +1053,58 @@ export default defineContentScript({
       createToolbar();
     };
 
+    // Hit test for annotations at a point (document coordinates)
+    const hitTestAnnotation = (x: number, y: number): { annotation?: Annotation; text?: TextAnnotation } | null => {
+      // Check text annotations first (they're on top)
+      for (let i = textAnnotations.length - 1; i >= 0; i--) {
+        const text = textAnnotations[i];
+        const el = document.getElementById(text.id);
+        if (el) {
+          const rect = el.getBoundingClientRect();
+          // Convert viewport coords to document coords for comparison
+          const elX = text.x;
+          const elY = text.y;
+          const elWidth = rect.width;
+          const elHeight = rect.height;
+          
+          if (
+            x >= elX &&
+            x <= elX + elWidth &&
+            y >= elY &&
+            y <= elY + elHeight
+          ) {
+            return { text };
+          }
+        }
+      }
+      
+      // Check canvas annotations (reverse order for top-most)
+      for (let i = annotations.length - 1; i >= 0; i--) {
+        const ann = annotations[i];
+        
+        if (ann.path && ann.path.length > 0) {
+          // Check if point is near pen/highlighter path
+          for (const point of ann.path) {
+            const dist = Math.sqrt(Math.pow(x - point.x, 2) + Math.pow(y - point.y, 2));
+            if (dist < 20) {
+              return { annotation: ann };
+            }
+          }
+        } else if (ann.end) {
+          // Check if point is inside shape bounding box
+          const minX = Math.min(ann.start.x, ann.end.x);
+          const maxX = Math.max(ann.start.x, ann.end.x);
+          const minY = Math.min(ann.start.y, ann.end.y);
+          const maxY = Math.max(ann.start.y, ann.end.y);
+          if (x >= minX - 10 && x <= maxX + 10 && y >= minY - 10 && y <= maxY + 10) {
+            return { annotation: ann };
+          }
+        }
+      }
+      
+      return null;
+    };
+
     // Mouse handlers - USE DOCUMENT COORDINATES (pageX/pageY)
     const handleMouseDown = (e: MouseEvent) => {
       if (!activeTool || !canvas || !ctx) return;
@@ -955,6 +1113,36 @@ export default defineContentScript({
       // Use pageX/pageY for document coordinates
       const x = e.pageX;
       const y = e.pageY;
+
+      if (activeTool === "eraser") {
+        const hit = hitTestAnnotation(x, y);
+        if (hit) {
+          if (hit.text) {
+            executeCommand({
+              type: "delete",
+              targetId: hit.text.id,
+              deletedText: JSON.parse(JSON.stringify(hit.text)),
+            });
+            const index = textAnnotations.findIndex((t) => t.id === hit.text!.id);
+            if (index > -1) {
+              textAnnotations.splice(index, 1);
+            }
+            updateTextAnnotations();
+          } else if (hit.annotation) {
+            executeCommand({
+              type: "delete",
+              targetId: hit.annotation.id,
+              deletedAnnotation: JSON.parse(JSON.stringify(hit.annotation)),
+            });
+            const index = annotations.findIndex((a) => a.id === hit.annotation!.id);
+            if (index > -1) {
+              annotations.splice(index, 1);
+            }
+            redrawAll();
+          }
+        }
+        return;
+      }
 
       if (activeTool === "text") {
         const id = `text-${Date.now()}`;
@@ -1173,6 +1361,7 @@ export default defineContentScript({
       if (activeTool === "pen") {
         if (currentPath.length > 1) {
           const annotation: Annotation = {
+            id: `ann-${Date.now()}-${Math.random()}`,
             type: "pen",
             start: currentPath[0],
             path: [...currentPath],
@@ -1184,6 +1373,7 @@ export default defineContentScript({
       } else if (activeTool === "highlighter") {
         if (currentPath.length > 1) {
           const annotation: Annotation = {
+            id: `ann-${Date.now()}-${Math.random()}`,
             type: "highlighter",
             start: currentPath[0],
             path: [...currentPath],
@@ -1194,6 +1384,7 @@ export default defineContentScript({
         }
       } else if (activeTool === "rectangle" || activeTool === "circle" || activeTool === "arrow") {
         const annotation: Annotation = {
+          id: `ann-${Date.now()}-${Math.random()}`,
           type: activeTool,
           start: startPoint,
           end: { x, y },
@@ -1218,10 +1409,23 @@ export default defineContentScript({
       createCanvas();
       
       // Load session from localStorage
-      const savedCommands = loadSession();
-      if (savedCommands.length > 0) {
-        undoStack = savedCommands;
+      const session = loadSession();
+      if (session.actions.length > 0) {
+        undoStack = session.actions;
         replayCommands(undoStack);
+      }
+      
+      // Restore tool state if available
+      if (session.toolState) {
+        const ts = session.toolState;
+        if (ts.color) selectedColor = ts.color;
+        if (ts.penWidth) penWidth = ts.penWidth;
+        if (ts.shapeType) lastUsedShape = ts.shapeType;
+        if (ts.shapeFillMode) shapeMode = ts.shapeFillMode;
+        // Restore active tool if it was set
+        if (ts.activeTool !== undefined && ts.activeTool !== null) {
+          activeTool = ts.activeTool;
+        }
       }
       
       createToolbar();
@@ -1230,7 +1434,8 @@ export default defineContentScript({
 
       // Enable pointer events
       overlay.style.pointerEvents = "auto";
-      canvas.style.pointerEvents = "auto";
+      // Set canvas pointer events based on restored active tool
+      canvas.style.pointerEvents = activeTool ? "auto" : "none";
 
       // Track mouse for coordinates (document coordinates)
       canvas.addEventListener("mousemove", (e) => {
@@ -1299,6 +1504,7 @@ export default defineContentScript({
         if (canvas) {
           canvas.style.pointerEvents = activeTool ? "auto" : "none";
         }
+        saveSession();
         updateToolbar();
       } else if (e.key === "h" || e.key === "H") {
         e.preventDefault();
@@ -1306,6 +1512,7 @@ export default defineContentScript({
         if (canvas) {
           canvas.style.pointerEvents = activeTool ? "auto" : "none";
         }
+        saveSession();
         updateToolbar();
       } else if (e.key === "m" || e.key === "M") {
         e.preventDefault();
@@ -1313,6 +1520,15 @@ export default defineContentScript({
         if (canvas) {
           canvas.style.pointerEvents = activeTool ? "auto" : "none";
         }
+        saveSession();
+        updateToolbar();
+      } else if (e.key === "r" || e.key === "R") {
+        e.preventDefault();
+        activeTool = activeTool === "eraser" ? null : "eraser";
+        if (canvas) {
+          canvas.style.pointerEvents = activeTool ? "auto" : "none";
+        }
+        saveSession();
         updateToolbar();
       }
     };
