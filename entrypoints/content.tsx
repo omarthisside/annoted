@@ -1,6 +1,7 @@
 import { defineContentScript } from "wxt/sandbox";
 import { drawShape, drawLine, getColorValue } from "../utils/canvas";
 import type { Tool, Color, ShapeMode } from "../utils/types";
+import LZString from "lz-string";
 
 // Annotation data structure - uses document coordinates
 interface Annotation {
@@ -122,6 +123,286 @@ export default defineContentScript({
         }
       }
       return { actions: [] };
+    };
+
+    // URL-based sharing
+    const SAFE_LIMIT = 6000;
+    const HARD_LIMIT = 8000;
+
+    const generateShareUrl = (): { url: string | null; size: number; status: "safe" | "warning" | "blocked" } => {
+      try {
+        const session = {
+          v: 1,
+          pageUrl: window.location.href.split("#")[0].split("?")[0],
+          actions: undoStack,
+          toolState: {
+            activeTool,
+            color: selectedColor,
+            penWidth,
+            shapeType: lastUsedShape,
+            shapeFillMode: shapeMode,
+          },
+        };
+
+        const json = JSON.stringify(session);
+        const compressed = LZString.compressToEncodedURIComponent(json);
+        const size = compressed.length;
+
+        if (size > HARD_LIMIT) {
+          return { url: null, size, status: "blocked" };
+        }
+
+        const baseUrl = window.location.href.split("#")[0].split("?")[0];
+        const shareUrl = `${baseUrl}#annoted=${compressed}`;
+
+        if (size > SAFE_LIMIT) {
+          return { url: shareUrl, size, status: "warning" };
+        }
+
+        return { url: shareUrl, size, status: "safe" };
+      } catch (e) {
+        console.warn("[Annoted] Failed to generate share URL:", e);
+        return { url: null, size: 0, status: "blocked" };
+      }
+    };
+
+    const showShareModal = () => {
+      const result = generateShareUrl();
+
+      // Remove existing modal if any
+      const existing = document.getElementById("annoted-share-modal");
+      if (existing) existing.remove();
+
+      const modal = document.createElement("div");
+      modal.id = "annoted-share-modal";
+      modal.style.cssText = `
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        background: rgba(0, 0, 0, 0.7);
+        backdrop-filter: blur(10px);
+        -webkit-backdrop-filter: blur(10px);
+        border: 1px solid rgba(255, 255, 255, 0.15);
+        border-radius: 12px;
+        padding: 24px;
+        z-index: 2147483650;
+        pointer-events: auto;
+        min-width: 400px;
+        max-width: 500px;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      `;
+
+      if (result.status === "blocked") {
+        modal.innerHTML = `
+          <h3 style="color: #ffffff; margin: 0 0 16px 0; font-size: 18px; font-weight: 600;">Cannot Share</h3>
+          <p style="color: rgba(255, 255, 255, 0.9); margin: 0 0 20px 0; line-height: 1.5;">
+            This annotation session is too large to share as a link (${result.size} characters).
+          </p>
+          <p style="color: rgba(255, 255, 255, 0.75); margin: 0 0 20px 0; line-height: 1.5; font-size: 14px;">
+            Try using screenshot export or full-page capture instead.
+          </p>
+          <button id="annoted-share-close" style="
+            width: 100%;
+            padding: 10px;
+            background: rgba(255, 255, 255, 0.2);
+            border: none;
+            border-radius: 8px;
+            color: #ffffff;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background-color 120ms ease;
+          ">Close</button>
+        `;
+      } else {
+        const warningText = result.status === "warning" 
+          ? `<p style="color: rgba(255, 200, 0, 0.9); margin: 0 0 16px 0; line-height: 1.5; font-size: 14px;">⚠️ This link may not work everywhere due to size (${result.size} characters).</p>`
+          : "";
+
+        modal.innerHTML = `
+          <h3 style="color: #ffffff; margin: 0 0 16px 0; font-size: 18px; font-weight: 600;">Share Annotations</h3>
+          <p style="color: rgba(255, 255, 255, 0.9); margin: 0 0 16px 0; line-height: 1.5;">
+            Anyone with Annoted installed will see these annotations instantly.
+          </p>
+          ${warningText}
+          <p style="color: rgba(255, 255, 255, 0.75); margin: 0 0 20px 0; line-height: 1.5; font-size: 14px;">
+            Best for small to medium annotations.
+          </p>
+          <div style="
+            background: rgba(0, 0, 0, 0.3);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            padding: 12px;
+            margin-bottom: 16px;
+            word-break: break-all;
+            font-size: 12px;
+            color: rgba(255, 255, 255, 0.8);
+            max-height: 120px;
+            overflow-y: auto;
+          " id="annoted-share-url">${result.url}</div>
+          <div style="display: flex; gap: 8px;">
+            <button id="annoted-share-copy" style="
+              flex: 1;
+              padding: 10px;
+              background: rgba(255, 255, 255, 0.2);
+              border: none;
+              border-radius: 8px;
+              color: #ffffff;
+              cursor: pointer;
+              font-size: 14px;
+              transition: background-color 120ms ease;
+            ">Copy Link</button>
+            <button id="annoted-share-close" style="
+              flex: 1;
+              padding: 10px;
+              background: rgba(255, 255, 255, 0.1);
+              border: none;
+              border-radius: 8px;
+              color: #ffffff;
+              cursor: pointer;
+              font-size: 14px;
+              transition: background-color 120ms ease;
+            ">Close</button>
+          </div>
+        `;
+
+        const copyBtn = modal.querySelector("#annoted-share-copy");
+        copyBtn?.addEventListener("click", () => {
+          if (result.url) {
+            navigator.clipboard.writeText(result.url).then(() => {
+              const btn = copyBtn as HTMLElement;
+              const originalText = btn.textContent;
+              btn.textContent = "Copied!";
+              btn.style.background = "rgba(0, 255, 0, 0.2)";
+              setTimeout(() => {
+                btn.textContent = originalText;
+                btn.style.background = "rgba(255, 255, 255, 0.2)";
+              }, 2000);
+            }).catch(() => {
+              // Fallback: select text
+              const urlEl = document.getElementById("annoted-share-url");
+              if (urlEl) {
+                const range = document.createRange();
+                range.selectNodeContents(urlEl);
+                const selection = window.getSelection();
+                selection?.removeAllRanges();
+                selection?.addRange(range);
+              }
+            });
+          }
+        });
+
+        copyBtn?.addEventListener("mouseenter", () => {
+          (copyBtn as HTMLElement).style.background = "rgba(255, 255, 255, 0.3)";
+        });
+        copyBtn?.addEventListener("mouseleave", () => {
+          (copyBtn as HTMLElement).style.background = "rgba(255, 255, 255, 0.2)";
+        });
+      }
+
+      const closeBtn = modal.querySelector("#annoted-share-close");
+      closeBtn?.addEventListener("click", () => {
+        modal.remove();
+      });
+
+      closeBtn?.addEventListener("mouseenter", () => {
+        (closeBtn as HTMLElement).style.background = "rgba(255, 255, 255, 0.2)";
+      });
+      closeBtn?.addEventListener("mouseleave", () => {
+        (closeBtn as HTMLElement).style.background = "rgba(255, 255, 255, 0.1)";
+      });
+
+      // Close on backdrop click
+      const backdrop = document.createElement("div");
+      backdrop.style.cssText = `
+    position: fixed;
+    top: 0;
+    left: 0;
+        width: 100vw;
+        height: 100vh;
+        background: rgba(0,0,0,0.3);
+        z-index: 2147483649;
+        pointer-events: auto;
+      `;
+      backdrop.onclick = () => {
+        modal.remove();
+        backdrop.remove();
+      };
+
+      overlay.appendChild(backdrop);
+      overlay.appendChild(modal);
+    };
+
+    // Restore from URL hash
+    const restoreFromUrl = () => {
+      try {
+        const hash = window.location.hash;
+        const match = hash.match(/annoted=([^&]+)/);
+        if (!match) return false;
+
+        const compressed = match[1];
+        const json = LZString.decompressFromEncodedURIComponent(compressed);
+        if (!json) {
+          console.warn("[Annoted] Failed to decompress share data");
+          return false;
+        }
+
+        const session = JSON.parse(json);
+        
+        // Validate version
+        if (session.v !== 1) {
+          console.warn("[Annoted] Unsupported share version:", session.v);
+          return false;
+        }
+
+        // Validate page URL matches
+        const currentUrl = window.location.href.split("#")[0].split("?")[0];
+        const sharedUrl = session.pageUrl || "";
+        if (currentUrl !== sharedUrl) {
+          console.warn("[Annoted] Page URL mismatch:", currentUrl, "vs", sharedUrl);
+          return false;
+        }
+
+        // Restore tool state
+        if (session.toolState) {
+          activeTool = session.toolState.activeTool || null;
+          selectedColor = session.toolState.color || "red";
+          penWidth = session.toolState.penWidth || 4;
+          lastUsedShape = session.toolState.shapeType || "rectangle";
+          shapeMode = session.toolState.shapeFillMode || "outline";
+        }
+
+        // Restore annotations by replaying actions
+        if (session.actions && Array.isArray(session.actions)) {
+          replayCommands(session.actions);
+          redrawAll();
+          updateTextAnnotations();
+          
+          // Save to localStorage
+          undoStack = JSON.parse(JSON.stringify(session.actions));
+          saveSession();
+        }
+
+        // Clean up URL hash
+        const newHash = hash.replace(/annoted=[^&]+&?/, "").replace(/^#&/, "#").replace(/^#$/, "");
+        if (newHash) {
+          window.history.replaceState(null, "", window.location.pathname + window.location.search + newHash);
+        } else {
+          window.history.replaceState(null, "", window.location.pathname + window.location.search);
+        }
+
+        return true;
+      } catch (e) {
+        console.warn("[Annoted] Failed to restore from URL:", e);
+        // Clear hash on error
+        const hash = window.location.hash.replace(/annoted=[^&]+&?/, "").replace(/^#&/, "#").replace(/^#$/, "");
+        if (hash) {
+          window.history.replaceState(null, "", window.location.pathname + window.location.search + hash);
+        } else {
+          window.history.replaceState(null, "", window.location.pathname + window.location.search);
+        }
+        return false;
+      }
     };
 
     // Replay commands to restore state
@@ -467,6 +748,7 @@ export default defineContentScript({
         redo: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 7v6h-6"/><path d="M3 17a9 9 0 0 1 9-9 9 9 0 0 1 6 2.3L21 13"/></svg>`,
         camera: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></svg>`,
         scan: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7V5a2 2 0 0 1 2-2h2"/><path d="M17 3h2a2 2 0 0 1 2 2v2"/><path d="M21 17v2a2 2 0 0 1-2 2h-2"/><path d="M7 21H5a2 2 0 0 1-2-2v-2"/><line x1="7" y1="12" x2="17" y2="12"/></svg>`,
+        share: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>`,
         download: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>`,
       };
       return icons[name] || "";
@@ -1256,12 +1538,14 @@ export default defineContentScript({
         }, undefined, false, "Full Page")
       );
 
+      // Share button
+      toolbar.appendChild(
+        createIconButton("share", false, () => {
+          showShareModal();
+        }, undefined, false, "Share")
+      );
+
       overlay.appendChild(toolbar);
-      
-      // Update theme after toolbar is in DOM
-      setTimeout(() => {
-        updateToolbarTheme();
-      }, 50);
     };
 
     const updateToolbar = () => {
@@ -1627,23 +1911,28 @@ export default defineContentScript({
 
       createCanvas();
       
-      // Load session from localStorage
-      const session = loadSession();
-      if (session.actions.length > 0) {
-        undoStack = session.actions;
-        replayCommands(undoStack);
-      }
+      // Check for shared annotations in URL hash first
+      const restoredFromUrl = restoreFromUrl();
       
-      // Restore tool state if available
-      if (session.toolState) {
-        const ts = session.toolState;
-        if (ts.color) selectedColor = ts.color;
-        if (ts.penWidth) penWidth = ts.penWidth;
-        if (ts.shapeType) lastUsedShape = ts.shapeType;
-        if (ts.shapeFillMode) shapeMode = ts.shapeFillMode;
-        // Restore active tool if it was set
-        if (ts.activeTool !== undefined && ts.activeTool !== null) {
-          activeTool = ts.activeTool;
+      if (!restoredFromUrl) {
+        // Load session from localStorage if no URL share
+        const session = loadSession();
+        if (session.actions.length > 0) {
+          undoStack = session.actions;
+          replayCommands(undoStack);
+        }
+        
+        // Restore tool state if available
+        if (session.toolState) {
+          const ts = session.toolState;
+          if (ts.color) selectedColor = ts.color;
+          if (ts.penWidth) penWidth = ts.penWidth;
+          if (ts.shapeType) lastUsedShape = ts.shapeType;
+          if (ts.shapeFillMode) shapeMode = ts.shapeFillMode;
+          // Restore active tool if it was set
+          if (ts.activeTool !== undefined && ts.activeTool !== null) {
+            activeTool = ts.activeTool;
+          }
         }
       }
       
@@ -2607,6 +2896,40 @@ export default defineContentScript({
       }
       return true;
     });
+
+    // Inject fallback script for non-installed users
+    const injectFallbackScript = () => {
+      // Only inject if there's an annoted= hash
+      if (!window.location.hash.includes("annoted=")) return;
+
+      const script = document.createElement("script");
+      script.textContent = `
+        (function() {
+          setTimeout(function() {
+            if (typeof window.__ANNOTED_INSTALLED__ === 'undefined') {
+              // Extension not installed, redirect to Chrome Web Store
+              const hash = window.location.hash;
+              const match = hash.match(/annoted=([^&]+)/);
+              if (match) {
+                // Preserve the original URL
+                const originalUrl = window.location.href;
+                // Redirect to Chrome Web Store (update with actual store URL)
+                window.location.href = 'https://chrome.google.com/webstore/detail/annoted/YOUR_EXTENSION_ID?utm_source=share&url=' + encodeURIComponent(originalUrl);
+              }
+            }
+          }, 300);
+        })();
+      `;
+      (document.head || document.documentElement).appendChild(script);
+      script.remove(); // Clean up after injection
+    };
+
+    // Inject fallback script on page load
+    if (document.readyState === "loading") {
+      document.addEventListener("DOMContentLoaded", injectFallbackScript);
+    } else {
+      injectFallbackScript();
+    }
 
     // Internal full page capture (called from background or modal)
     const captureFullPageInternal = async (
