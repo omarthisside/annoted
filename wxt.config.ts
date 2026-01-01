@@ -10,7 +10,6 @@ export default defineConfig({
       {
         matches: ["<all_urls>"],
         js: ["content-scripts/content.js"],
-        css: ["content-scripts/content.css"],
         run_at: "document_idle",
       },
     ],

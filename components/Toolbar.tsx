@@ -116,16 +116,16 @@ export function Toolbar({
 
   return (
     <>
-      {/* Toolbar - always visible at bottom */}
+      {/* Toolbar - right side, always visible when enabled */}
       <div
         className="proofly-toolbar"
         style={{
           position: "fixed",
-          bottom: "24px",
-          left: "50%",
-          transform: "translateX(-50%)",
+          right: "24px",
+          top: "50%",
+          transform: "translateY(-50%)",
           zIndex: 1000000,
-          background: "rgba(0, 0, 0, 0.8)",
+          background: "rgba(0, 0, 0, 0.2)",
           backdropFilter: "blur(12px)",
           WebkitBackdropFilter: "blur(12px)",
           borderRadius: "16px",
